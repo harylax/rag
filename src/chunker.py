@@ -145,33 +145,32 @@ class MarkdownChunker(Chunker):
             ))
         return res
 
-
-    # def test(self, text: str, file_path: str) -> list[Chunk]:
-    #     res: list[Chunk] = []
-    #     chunks: list[Chunk] = self.split_by_title(text, file_path)
-    #     for chunk in chunks:
-    #         if len(chunk.text) > self.max_chunk_size:
-    #             splitter = RecursiveCharacterTextSplitter(
-    #                 ['\n\n', '\n', '. ', ' ', ''],
-    #                 chunk_size=self.max_chunk_size,
-    #                 chunk_overlap=int(self.max_chunk_size * 0.1),
-    #                 add_start_index=True
-    #                 )
-    #             documents = splitter.create_documents([chunk.text])
-    #             for doc in documents:
-    #                 start: int = chunk.first_character_index \
-    #                     + doc.metadata['start_index']
-    #                 end: int = start + len(doc.page_content)
-    #                 res.append(Chunk(
-    #                     file_path=file_path,
-    #                     first_character_index=start,
-    #                     last_character_index=end - 1,
-    #                     titles=chunk.titles,
-    #                     text=doc.page_content
-    #                 ))
-    #         else:
-    #             res.append(chunk)
-    #     return res
+    def recursive_split(self, text: str, file_path: str) -> list[Chunk]:
+        res: list[Chunk] = []
+        chunks: list[Chunk] = self.split_by_title(text, file_path)
+        for chunk in chunks:
+            if len(chunk.text) > self.max_chunk_size:
+                splitter = RecursiveCharacterTextSplitter(
+                    ['\n\n', '\n', '. ', ' ', ''],
+                    chunk_size=self.max_chunk_size,
+                    chunk_overlap=int(self.max_chunk_size * 0.1),
+                    add_start_index=True
+                    )
+                documents = splitter.create_documents([chunk.text])
+                for doc in documents:
+                    start: int = chunk.first_character_index \
+                        + doc.metadata['start_index']
+                    end: int = start + len(doc.page_content)
+                    res.append(Chunk(
+                        file_path=file_path,
+                        first_character_index=start,
+                        last_character_index=end - 1,
+                        titles=chunk.titles,
+                        text=doc.page_content
+                    ))
+            else:
+                res.append(chunk)
+        return res
 
 
 def path_content_in_folder(
@@ -200,10 +199,11 @@ def return_read_file(path: str) -> str:
 if __name__ == "__main__":
     file_path: str = 'data/raw/vllm-0.10.1/README.md'
     content: str = return_read_file(file_path)
-    for chunk in MarkdownChunker(200).split_by_title(content, file_path):
-        print(chunk.model_dump_json(indent=2))
-        print('========================================')
-        print(chunk.text)
-        print('----------------------------------------')
-        print(content[chunk.first_character_index:chunk.last_character_index + 1])
-        print('========================================')
+    for chunk in MarkdownChunker(200).test(content, file_path):
+        # print(chunk.model_dump_json(indent=2))
+        # print('========================================')
+        # print(chunk.text)
+        # print('----------------------------------------')
+        # print(content[chunk.first_character_index:chunk.last_character_index + 1])
+        # print('========================================')
+        assert chunk.text == content[chunk.first_character_index:chunk.last_character_index + 1]
