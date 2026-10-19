@@ -137,7 +137,7 @@ class MarkdownChunker(Chunker):
                 start = start + len(lines[0])
                 chunk_text = ''.join(lines[1:])
             res.append(Chunk(
-                file_path=file_path,
+                file_path=chunk.file_path,
                 first_character_index=start,
                 last_character_index=end,
                 titles=chunk.titles,
@@ -172,6 +172,30 @@ class MarkdownChunker(Chunker):
                 res.append(chunk)
         return res
 
+class PythonCodeChunker(Chunker):
+    def __init__(self, max_chunk_size: int = 2000) -> None:
+        super().__init__(max_chunk_size)
+
+    def recursive_split(self, text: str, file_path: str) -> list[Chunk]:
+        res: list[Chunk] = []
+        splitter = PythonCodeTextSplitter(
+            chunk_size=self.max_chunk_size,
+            chunk_overlap=int(self.max_chunk_size * 0.1),
+            add_start_index=True
+        )
+        documents = splitter.create_documents([text])
+        for doc in documents:
+            start: int = doc.metadata['start_index']
+            end: int = start + len(doc.page_content)
+            res.append(Chunk(
+                file_path=file_path,
+                first_character_index=start,
+                last_character_index=end - 1,
+                titles=[],
+                text=doc.page_content
+            ))
+        return res
+
 
 def path_content_in_folder(
         folder_path: str,
@@ -196,14 +220,39 @@ def return_read_file(path: str) -> str:
         exit(1)
 
 
-if __name__ == "__main__":
-    file_path: str = 'data/raw/vllm-0.10.1/README.md'
-    content: str = return_read_file(file_path)
-    for chunk in MarkdownChunker(200).test(content, file_path):
-        # print(chunk.model_dump_json(indent=2))
+def test_md(
+        max_chunk_size: int = 2000,
+        file_path: str = 'data/raw/vllm-0.10.1/README.md'
+        ) -> None:
+    content = return_read_file(file_path)
+    chunks = MarkdownChunker(max_chunk_size).recursive_split(content, file_path)
+    for chunk in chunks:
+        print(chunk.model_dump_json(indent=2))
         # print('========================================')
         # print(chunk.text)
         # print('----------------------------------------')
         # print(content[chunk.first_character_index:chunk.last_character_index + 1])
         # print('========================================')
+        # assert chunk.text == content[chunk.first_character_index:chunk.last_character_index + 1]
+
+
+def test_py(
+        max_chunk_size: int = 2000,
+        file_path: str = 'data/raw/vllm-0.10.1/setup.py'
+        ) -> None:
+    content = return_read_file(file_path)
+    chunks = PythonCodeChunker(max_chunk_size).recursive_split(content, file_path)
+    for chunk in chunks:
+        # print(chunk.model_dump_json(indent=2))
+        print('========================================')
+        print(chunk.text)
+        print('----------------------------------------')
+        print(content[chunk.first_character_index:chunk.last_character_index + 1])
+        print('========================================')
         assert chunk.text == content[chunk.first_character_index:chunk.last_character_index + 1]
+
+
+
+
+if __name__ == "__main__":
+    test_py(800)
