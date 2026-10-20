@@ -4,12 +4,42 @@ from langchain_text_splitters import (
 )
 from .models import Chunk
 from pathlib import Path
+from abc import ABC, abstractmethod
 
 
-class Chunker:
+class BaseChunker(ABC):
     def __init__(self, max_chunk_size: int = 2000) -> None:
         self.max_chunk_size: int = max_chunk_size
         self.processed_chunks: list[Chunk] = []
+        if (
+            self.max_chunk_size <= 0
+            or self.max_chunk_size > 2000
+        ):
+            print(
+                "\033[31mValueError: max_chunk_size should be at least "
+                "1 and at most 2000\033[0m"
+            )
+            exit(1)
+
+    @abstractmethod
+    def split_in_chunks(self, text: str, file_path: str) -> list[Chunk]:
+        ...
+
+    def process_chunks(
+            self,
+            files_content: dict[str, str]
+    ) -> None:
+        for file_path, content in files_content.items():
+            self.processed_chunks.extend(
+                self.split_in_chunks(
+                    content, file_path
+                )
+            )
+
+
+class TextChunker(BaseChunker):
+    def __init__(self, max_chunk_size: int = 2000) -> None:
+        super().__init__(max_chunk_size)
 
     def split_in_chunks(self, text: str, file_path: str) -> list[Chunk]:
         res: list[Chunk] = []
@@ -33,7 +63,7 @@ class Chunker:
         return res
 
 
-class MarkdownChunker(Chunker):
+class MarkdownChunker(BaseChunker):
     def __init__(self, max_chunk_size: int = 2000) -> None:
         super().__init__(max_chunk_size)
 
@@ -144,7 +174,7 @@ class MarkdownChunker(Chunker):
         return res
 
 
-class PythonCodeChunker(Chunker):
+class PythonCodeChunker(BaseChunker):
     def __init__(self, max_chunk_size: int = 2000) -> None:
         super().__init__(max_chunk_size)
 
@@ -171,16 +201,48 @@ class PythonCodeChunker(Chunker):
 
 def path_content_in_folder(
         folder_path: str,
-        file_extension: str
-        ) -> dict[str, str]:
-    res: dict[str, str] = {}
-    for file in Path(folder_path).rglob('*' + file_extension):
-        try:
-            res[str(file)] = file.read_text()
-        except OSError:
-            continue
+        file_extension: list[str] = ['.txt', '.md', '.py']
+        ) -> dict[str, dict[str, str]]:
+    res: dict[str, dict[str, str]] = {
+        extension: {} for extension in file_extension
+    }
+    for file in Path(folder_path).rglob('*'):
+        if file.suffix in file_extension:
+            try:
+                res[file.suffix][str(file)] = file.read_text()
+            except OSError:
+                continue
     if not res:
         print(f"\033[31mNo '{file_extension}' file found.\033[0m")
+    return res
+
+
+def process_needed_chunks(
+        folder_path: str = 'data/raw/vllm-0.10.1',
+        max_chunk_size: int = 2000,
+        file_extension: list[str] = ['.txt', '.md', '.py']
+) -> list[Chunk]:
+    res: list[Chunk] = []
+
+    files_content: dict[str, dict[str, str]] = path_content_in_folder(
+        folder_path, file_extension
+        )
+
+    if '.txt' in file_extension and files_content['.txt']:
+        text_chunker = TextChunker(max_chunk_size)
+        text_chunker.process_chunks(files_content['.txt'])
+        res.extend(text_chunker.processed_chunks)
+
+    if '.md' in file_extension and files_content['.md']:
+        markdown_chunker = MarkdownChunker(max_chunk_size)
+        markdown_chunker.process_chunks(files_content['.md'])
+        res.extend(markdown_chunker.processed_chunks)
+
+    if '.py' in file_extension and files_content['.py']:
+        python_chunker = PythonCodeChunker(max_chunk_size)
+        python_chunker.process_chunks(files_content['.py'])
+        res.extend(python_chunker.processed_chunks)
+
     return res
 
 
@@ -229,7 +291,7 @@ def test_txt(
         file_path: str = 'data/raw/vllm-0.10.1/requirements/cpu.txt'
         ) -> None:
     content = return_read_file(file_path)
-    chunks = Chunker(max_chunk_size).split_in_chunks(content, file_path)
+    chunks = TextChunker(max_chunk_size).split_in_chunks(content, file_path)
     for chunk in chunks:
         # print(chunk.model_dump_json(indent=2))
         print('========================================')
@@ -240,5 +302,26 @@ def test_txt(
         assert chunk.text == content[chunk.first_character_index:chunk.last_character_index + 1]
 
 
+def test_process(max_chunk_size: int = 2000) -> None:
+    # processed_txt = process_needed_chunks(
+    #     max_chunk_size=max_chunk_size, file_extension=['.txt']
+    #     )
+    # processed_md = process_needed_chunks(
+    #     max_chunk_size=max_chunk_size, file_extension=['.txt', '.md']
+    #     )
+    # processed_py = process_needed_chunks(
+    #     max_chunk_size=max_chunk_size, file_extension=['.py']
+    #     )
+    processed_all = process_needed_chunks(max_chunk_size=max_chunk_size)
+    # for chunk in processed_txt:
+    #     print(chunk.model_dump_json(indent=2))
+    # for chunk in processed_md:
+    #     print(chunk.model_dump_json(indent=2))
+    # for chunk in processed_py:
+    #     print(chunk.model_dump_json(indent=2))
+    for chunk in processed_all:
+        print(chunk.model_dump_json(indent=2))
+
+
 if __name__ == "__main__":
-    test_txt(800)
+    test_process(200)
