@@ -306,21 +306,21 @@ def test_process(max_chunk_size: int = 2000) -> None:
     # processed_txt = process_needed_chunks(
     #     max_chunk_size=max_chunk_size, file_extension=['.txt']
     #     )
-    # processed_md = process_needed_chunks(
-    #     max_chunk_size=max_chunk_size, file_extension=['.txt', '.md']
-    #     )
+    processed_md = process_needed_chunks(
+        max_chunk_size=max_chunk_size, file_extension=['.txt', '.md']
+        )
     # processed_py = process_needed_chunks(
     #     max_chunk_size=max_chunk_size, file_extension=['.py']
     #     )
-    processed_all = process_needed_chunks(max_chunk_size=max_chunk_size)
+    # processed_all = process_needed_chunks(max_chunk_size=max_chunk_size)
     # for chunk in processed_txt:
     #     print(chunk.model_dump_json(indent=2))
-    # for chunk in processed_md:
-    #     print(chunk.model_dump_json(indent=2))
+    for chunk in processed_md:
+        print(chunk.model_dump_json(indent=2))
     # for chunk in processed_py:
     #     print(chunk.model_dump_json(indent=2))
-    for chunk in processed_all:
-        print(chunk.model_dump_json(indent=2))
+    # for chunk in processed_all:
+    #     print(chunk.model_dump_json(indent=2))
 
 
 if __name__ == "__main__":
