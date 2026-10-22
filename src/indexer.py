@@ -10,10 +10,8 @@ class Indexer:
     def __init__(
             self,
             folder_path: str = 'data/raw/vllm-0.10.1',
-            max_chunk_size: int = 2000,
-            file_extension: list[str] = ['.txt', '.md', '.py']
+            max_chunk_size: int = 2000
             ) -> None:
-        self.bm25 = BM25()
 
         data_path = Path('data/processed/data.csc.index.npy')
         indices_path = Path('data/processed/indices.csc.index.npy')
@@ -30,9 +28,7 @@ class Indexer:
                 )
 
         new_checker: dict[str, Any] = self.corpus_checker(
-            folder_path,
-            file_extension,
-            max_chunk_size
+            folder_path, max_chunk_size
             )
 
         if (
@@ -47,31 +43,31 @@ class Indexer:
             ))
             and old_checker == new_checker
                 ):
-            # self.bm25 = self.bm25.load('data/processed')
-            # self.sources: list[MinimalSource] = [
-            #     MinimalSource.model_validate(source)
-            #     for source in json.loads(sources_path.read_text())
-            # ]
-            print(">>>>>LOAD<<<<<")
-        else:
-            chunks: list[Chunk] = chunk_folder_files(
-                folder_path, max_chunk_size, file_extension
+            print("Index up to date under data/processed")
+            return
+
+        chunks: list[Chunk] = chunk_folder_files(
+            folder_path, max_chunk_size
+        )
+        sources = [
+            MinimalSource(
+                file_path=chunk.file_path,
+                first_character_index=chunk.first_character_index,
+                last_character_index=chunk.last_character_index
+            ) for chunk in chunks
+        ]
+        self.bm25 = BM25()
+        self.tokens = self.get_tokens(chunks)
+        self.bm25.index(self.tokens, leave_progress=True)
+        self.bm25.save('data/processed/')
+        Path('data/processed/corpus_checker.json').write_text(
+            json.dumps(new_checker, indent=2)
             )
-            sources = [
-                MinimalSource(
-                    file_path=chunk.file_path,
-                    first_character_index=chunk.first_character_index,
-                    last_character_index=chunk.last_character_index
-                ) for chunk in chunks
-            ]
-            self.tokens = self.get_tokens(chunks)
-            self.bm25.index(self.tokens, leave_progress=True)
-            self.bm25.save('data/processed/')
-            Path('data/processed/corpus_checker.json').write_text(
-                json.dumps(new_checker, indent=2)
-                )
-            self.save_sources(sources)
-            print(">>>>>REINDEX<<<<<")
+        self.save_sources(sources)
+        print(
+            f"Ingestion completed! Indexed {len(sources)} "
+            f"chunks under data/processed"
+            )
 
     def save_sources(self, sources: list[MinimalSource]) -> None:
         data: list[Any] = [source.model_dump() for source in sources]
@@ -90,12 +86,11 @@ class Indexer:
     def corpus_checker(
             self,
             corpus_path: str,
-            file_extension: list[str],
             max_chunk_size: int
             ) -> dict[str, Any]:
         files: dict[str, Any] = {}
         for file in Path(corpus_path).rglob('*'):
-            if file.suffix in file_extension:
+            if file.suffix in ['.txt', '.md', '.py']:
                 stat = file.stat()
                 files[str(file)] = [stat.st_mtime, stat.st_size]
         files['max_chunk_size'] = max_chunk_size
@@ -103,4 +98,4 @@ class Indexer:
 
 
 if __name__ == "__main__":
-    indexer = Indexer(max_chunk_size=1000, file_extension=['.md', '.txt', '.py'])
+    indexer = Indexer(max_chunk_size=1000)

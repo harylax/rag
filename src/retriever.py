@@ -1,7 +1,6 @@
 from bm25s import BM25, tokenize
 from .models import MinimalSource, MinimalSearchResults, RagDataset, StudentSearchResults
 import uuid
-from typing import Any
 from pathlib import Path
 from tqdm import tqdm
 import json
