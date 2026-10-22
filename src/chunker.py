@@ -5,12 +5,12 @@ from langchain_text_splitters import (
 from .models import Chunk
 from pathlib import Path
 from abc import ABC, abstractmethod
+from tqdm import tqdm
 
 
 class BaseChunker(ABC):
     def __init__(self, max_chunk_size: int = 2000) -> None:
         self.max_chunk_size: int = max_chunk_size
-        self.processed_chunks: list[Chunk] = []
         if (
             self.max_chunk_size <= 0
             or self.max_chunk_size > 2000
@@ -24,17 +24,6 @@ class BaseChunker(ABC):
     @abstractmethod
     def split_in_chunks(self, text: str, file_path: str) -> list[Chunk]:
         ...
-
-    def process_chunks(
-            self,
-            files_content: dict[str, str]
-    ) -> None:
-        for file_path, content in files_content.items():
-            self.processed_chunks.extend(
-                self.split_in_chunks(
-                    content, file_path
-                )
-            )
 
 
 class TextChunker(BaseChunker):
@@ -199,7 +188,7 @@ class PythonCodeChunker(BaseChunker):
         return res
 
 
-def path_content_in_folder(
+def read_files_grouped_by_extension(
         folder_path: str,
         file_extension: list[str] = ['.txt', '.md', '.py']
         ) -> dict[str, dict[str, str]]:
@@ -217,36 +206,53 @@ def path_content_in_folder(
     return res
 
 
-def process_needed_chunks(
+def merge_files_content(
+        folder_path: str = 'data/raw/vllm-0.10.1',
+        file_extension: list[str] = ['.txt', '.md', '.py']
+        ) -> dict[str, str]:
+    res: dict[str, str] = {}
+    files: dict[str, dict[str, str]] = read_files_grouped_by_extension(
+        folder_path, file_extension
+        )
+    if '.txt' in file_extension and files['.txt']:
+        res.update(files['.txt'])
+    if '.md' in file_extension and files['.md']:
+        res.update(files['.md'])
+    if '.py' in file_extension and files['.py']:
+        res.update(files['.py'])
+    return res
+
+
+def chunk_folder_files(
         folder_path: str = 'data/raw/vllm-0.10.1',
         max_chunk_size: int = 2000,
         file_extension: list[str] = ['.txt', '.md', '.py']
 ) -> list[Chunk]:
     res: list[Chunk] = []
-
-    files_content: dict[str, dict[str, str]] = path_content_in_folder(
+    files_content: dict[str, str] = merge_files_content(
         folder_path, file_extension
-        )
-
-    if '.txt' in file_extension and files_content['.txt']:
-        text_chunker = TextChunker(max_chunk_size)
-        text_chunker.process_chunks(files_content['.txt'])
-        res.extend(text_chunker.processed_chunks)
-
-    if '.md' in file_extension and files_content['.md']:
-        markdown_chunker = MarkdownChunker(max_chunk_size)
-        markdown_chunker.process_chunks(files_content['.md'])
-        res.extend(markdown_chunker.processed_chunks)
-
-    if '.py' in file_extension and files_content['.py']:
-        python_chunker = PythonCodeChunker(max_chunk_size)
-        python_chunker.process_chunks(files_content['.py'])
-        res.extend(python_chunker.processed_chunks)
-
+    )
+    for path, content in tqdm(
+        files_content.items(),
+        desc='Chunking',
+        unit=' file'
+            ):
+        if Path(path).suffix == '.txt':
+            res.extend(
+                TextChunker(max_chunk_size).split_in_chunks(content, path)
+                )
+        if Path(path).suffix == '.md':
+            res.extend(
+                MarkdownChunker(max_chunk_size).split_in_chunks(content, path)
+                )
+        if Path(path).suffix == '.py':
+            res.extend(
+                PythonCodeChunker(max_chunk_size).split_in_chunks(content, path)
+                )
     return res
 
 
-def return_read_file(path: str) -> str:
+def read_file(path: str) -> str:
     try:
         return Path(path).read_text()
     except OSError as err:
@@ -258,23 +264,23 @@ def test_md(
         max_chunk_size: int = 2000,
         file_path: str = 'data/raw/vllm-0.10.1/README.md'
         ) -> None:
-    content = return_read_file(file_path)
+    content = read_file(file_path)
     chunks = MarkdownChunker(max_chunk_size).split_in_chunks(content, file_path)
     for chunk in chunks:
-        print(chunk.model_dump_json(indent=2))
-        # print('========================================')
-        # print(chunk.text)
-        # print('----------------------------------------')
-        # print(content[chunk.first_character_index:chunk.last_character_index + 1])
-        # print('========================================')
-        # assert chunk.text == content[chunk.first_character_index:chunk.last_character_index + 1]
+        # print(chunk.model_dump_json(indent=2))
+        print('========================================')
+        print(chunk.text)
+        print('----------------------------------------')
+        print(content[chunk.first_character_index:chunk.last_character_index + 1])
+        print('========================================')
+        assert chunk.text == content[chunk.first_character_index:chunk.last_character_index + 1]
 
 
 def test_py(
         max_chunk_size: int = 2000,
         file_path: str = 'data/raw/vllm-0.10.1/setup.py'
         ) -> None:
-    content = return_read_file(file_path)
+    content = read_file(file_path)
     chunks = PythonCodeChunker(max_chunk_size).split_in_chunks(content, file_path)
     for chunk in chunks:
         # print(chunk.model_dump_json(indent=2))
@@ -290,7 +296,7 @@ def test_txt(
         max_chunk_size: int = 2000,
         file_path: str = 'data/raw/vllm-0.10.1/requirements/cpu.txt'
         ) -> None:
-    content = return_read_file(file_path)
+    content = read_file(file_path)
     chunks = TextChunker(max_chunk_size).split_in_chunks(content, file_path)
     for chunk in chunks:
         # print(chunk.model_dump_json(indent=2))
@@ -303,25 +309,25 @@ def test_txt(
 
 
 def test_process(max_chunk_size: int = 2000) -> None:
-    # processed_txt = process_needed_chunks(
+    # processed_txt = chunk_folder_files(
     #     max_chunk_size=max_chunk_size, file_extension=['.txt']
     #     )
-    processed_md = process_needed_chunks(
-        max_chunk_size=max_chunk_size, file_extension=['.txt', '.md']
-        )
-    # processed_py = process_needed_chunks(
+    # processed_md = chunk_folder_files(
+    #     max_chunk_size=max_chunk_size, file_extension=['.txt', '.md']
+    #     )
+    # processed_py = chunk_folder_files(
     #     max_chunk_size=max_chunk_size, file_extension=['.py']
     #     )
-    # processed_all = process_needed_chunks(max_chunk_size=max_chunk_size)
+    processed_all = chunk_folder_files(max_chunk_size=max_chunk_size)
     # for chunk in processed_txt:
     #     print(chunk.model_dump_json(indent=2))
-    for chunk in processed_md:
-        print(chunk.model_dump_json(indent=2))
+    # for chunk in processed_md:
+    #     print(chunk.model_dump_json(indent=2))
     # for chunk in processed_py:
     #     print(chunk.model_dump_json(indent=2))
-    # for chunk in processed_all:
-    #     print(chunk.model_dump_json(indent=2))
+    for chunk in processed_all:
+        print(chunk.model_dump_json(indent=2))
 
 
 if __name__ == "__main__":
-    test_process(200)
+    test_process(100)

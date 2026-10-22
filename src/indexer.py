@@ -1,5 +1,5 @@
 from bm25s import BM25, tokenize
-from .chunker import process_needed_chunks
+from .chunker import chunk_folder_files
 from .models import Chunk
 from pathlib import Path
 from typing import Any
@@ -43,11 +43,11 @@ class Indexer:
             self.bm25.load('data/processed')
             print(">>>>>LOAD<<<<<")
         else:
-            self.chunks: list[Chunk] = process_needed_chunks(
+            self.chunks: list[Chunk] = chunk_folder_files(
                 folder_path, max_chunk_size, file_extension
             )
             self.tokens = self.get_tokens()
-            self.bm25.index(self.tokens)
+            self.bm25.index(self.tokens, leave_progress=True)
             self.bm25.save('data/processed/')
             Path('data/processed/corpus_checker.json').write_text(
                 json.dumps(new)
@@ -59,7 +59,7 @@ class Indexer:
         for chunk in self.chunks:
             titles: str = '\n'.join(chunk.titles)
             res.append(titles + chunk.text)
-        return tokenize(res)
+        return tokenize(res, leave=True)
 
     # def get_tokens(self) -> list[list[str]]:
     #     res = []
@@ -84,4 +84,7 @@ class Indexer:
 
 
 if __name__ == "__main__":
-    indexer = Indexer(max_chunk_size=20, file_extension=['.md', '.txt'])
+    indexer = Indexer(max_chunk_size=10, file_extension=['.md', '.txt', '.py'])
+    import inspect
+    print(inspect.signature(BM25.index))
+    print(inspect.signature(tokenize))
