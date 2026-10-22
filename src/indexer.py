@@ -2,6 +2,8 @@ from bm25s import BM25, tokenize
 from .chunker import process_needed_chunks
 from .models import Chunk
 from pathlib import Path
+from typing import Any
+import json
 
 
 class Indexer:
@@ -17,24 +19,39 @@ class Indexer:
         indptr_exists = Path('data/processed/indptr.csc.index.npy').exists()
         params_exists = Path('data/processed/params.index.json').exists()
         vocab_exists = Path('data/processed/vocab.index.json').exists()
+        checker_exists = Path('data/processed/corpus_checker.json').exists()
 
-        if all(
-            file for file in (
+        old: dict[str, Any] | None = None
+        if checker_exists:
+            old = json.loads(
+                Path('data/processed/corpus_checker.json').read_text()
+                )
+
+        new = self.check_corpus(folder_path, file_extension, max_chunk_size)
+
+        if (
+            all(file for file in (
                 data_exists,
                 indices_exists,
                 indptr_exists,
                 params_exists,
-                vocab_exists)
+                vocab_exists,
+                checker_exists
+            ))
+            and old == new
                 ):
             self.bm25.load('data/processed')
             print(">>>>>LOAD<<<<<")
         else:
             self.chunks: list[Chunk] = process_needed_chunks(
-            folder_path, max_chunk_size, file_extension
-        )
+                folder_path, max_chunk_size, file_extension
+            )
             self.tokens = self.get_tokens()
             self.bm25.index(self.tokens)
             self.bm25.save('data/processed/')
+            Path('data/processed/corpus_checker.json').write_text(
+                json.dumps(new)
+                )
             print(">>>>>REINDEX<<<<<")
 
     def get_tokens(self) -> list[list[str]]:
@@ -51,6 +68,20 @@ class Indexer:
     #         res.append(tokenize(titles + chunk.text))
     #     return res
 
+    def check_corpus(
+            self,
+            corpus_path: str,
+            file_extension: list[str],
+            max_chunk_size: int
+            ) -> dict[str, Any]:
+        files: dict[str, Any] = {}
+        for file in Path(corpus_path).rglob('*'):
+            if file.suffix in file_extension:
+                stat = file.stat()
+                files[str(file)] = [stat.st_mtime, stat.st_size]
+        files['max_chunk_size'] = max_chunk_size
+        return files
+
 
 if __name__ == "__main__":
-    indexer = Indexer(file_extension=['.md', '.txt'])
+    indexer = Indexer(max_chunk_size=20, file_extension=['.md', '.txt'])
