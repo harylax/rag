@@ -4,6 +4,7 @@ from .models import Chunk, MinimalSource
 from pathlib import Path
 from typing import Any
 import json
+from tqdm import tqdm
 
 
 class Indexer:
@@ -58,7 +59,7 @@ class Indexer:
         ]
         self.bm25 = BM25()
         self.tokens = self.get_tokens(chunks)
-        self.bm25.index(self.tokens, leave_progress=True)
+        self.bm25.index(self.tokens)
         self.bm25.save('data/processed/')
         Path('data/processed/corpus_checker.json').write_text(
             json.dumps(new_checker, indent=2)
@@ -77,11 +78,11 @@ class Indexer:
 
     def get_tokens(self, chunks: list[Chunk]) -> Any:
         res = []
-        for chunk in chunks:
+        for chunk in tqdm(chunks, desc='Tokenizing', unit=' chunk'):
             titles: str = '\n'.join(chunk.titles)
             path: str = str(Path(chunk.file_path).stem)
             res.append(path + titles + chunk.text)
-        return tokenize(res, leave=True)
+        return tokenize(res)
 
     def corpus_checker(
             self,

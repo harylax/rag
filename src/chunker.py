@@ -188,38 +188,16 @@ class PythonCodeChunker(BaseChunker):
         return res
 
 
-def read_files_grouped_by_extension(
-        folder_path: str,
-        file_extension: list[str] = ['.txt', '.md', '.py']
-        ) -> dict[str, dict[str, str]]:
-    res: dict[str, dict[str, str]] = {
-        extension: {} for extension in file_extension
-    }
-    for file in Path(folder_path).rglob('*'):
-        if file.suffix in file_extension:
-            try:
-                res[file.suffix][str(file)] = file.read_text()
-            except OSError:
-                continue
-    if not res:
-        print(f"\033[31mNo '{file_extension}' file found.\033[0m")
-    return res
-
-
-def merge_files_content(
-        folder_path: str = 'data/raw/vllm-0.10.1',
-        file_extension: list[str] = ['.txt', '.md', '.py']
+def folder_files_content(
+        folder_path: str = 'data/raw/vllm-0.10.1'
         ) -> dict[str, str]:
     res: dict[str, str] = {}
-    files: dict[str, dict[str, str]] = read_files_grouped_by_extension(
-        folder_path, file_extension
-        )
-    if '.txt' in file_extension and files['.txt']:
-        res.update(files['.txt'])
-    if '.md' in file_extension and files['.md']:
-        res.update(files['.md'])
-    if '.py' in file_extension and files['.py']:
-        res.update(files['.py'])
+    for file in Path(folder_path).rglob('*'):
+        if file.is_file() and file.suffix in ['.txt', '.md', '.py']:
+            res[str(file)] = file.read_text()
+    if not res:
+        print("\033[31mFolderErro: no markdown / python file found.\033[0m")
+        exit(1)
     return res
 
 
@@ -229,9 +207,7 @@ def chunk_folder_files(
         file_extension: list[str] = ['.txt', '.md', '.py']
 ) -> list[Chunk]:
     res: list[Chunk] = []
-    files_content: dict[str, str] = merge_files_content(
-        folder_path, file_extension
-    )
+    files_content: dict[str, str] = folder_files_content(folder_path)
     for path, content in tqdm(
         files_content.items(),
         desc='Chunking',
