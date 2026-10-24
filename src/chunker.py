@@ -6,6 +6,8 @@ from .models import Chunk
 from pathlib import Path
 from abc import ABC, abstractmethod
 from tqdm import tqdm
+import ast
+from dataclasses import dataclass
 
 
 class BaseChunker(ABC):
@@ -163,29 +165,48 @@ class MarkdownChunker(BaseChunker):
         return res
 
 
+@dataclass
+class Definition:
+    lineno: int
+    end_lineno: int
+    title: str
+
+
 class PythonCodeChunker(BaseChunker):
     def __init__(self, max_chunk_size: int = 2000) -> None:
         super().__init__(max_chunk_size)
 
-    def split_in_chunks(self, text: str, file_path: str) -> list[Chunk]:
-        res: list[Chunk] = []
-        splitter = PythonCodeTextSplitter(
-            chunk_size=self.max_chunk_size,
-            chunk_overlap=int(self.max_chunk_size * 0.1),
-            add_start_index=True
-        )
-        documents = splitter.create_documents([text])
-        for doc in documents:
-            start: int = doc.metadata['start_index']
-            end: int = start + len(doc.page_content)
-            res.append(Chunk(
-                file_path=file_path,
-                first_character_index=start,
-                last_character_index=end - 1,
-                titles=[],
-                text=doc.page_content
+    def get_definitions(self, text: str) -> list[Definition]:
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            return []
+        res: list[Definition] = []
+        for node in ast.walk(tree):
+            if not isinstance(node, (
+                ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef
+            )):
+                continue
+            if isinstance(node, ast.ClassDef):
+                title = f"class {node.name}"
+            elif isinstance(node, ast.FunctionDef):
+                title = f"def {node.name}"
+            elif isinstance(node, ast.AsyncFunctionDef):
+                title = f"async def {node.name}"
+            else:
+                continue
+            lineno = (
+                node.decorator_list[0].lineno
+                if node.decorator_list
+                else node.lineno
+            )
+            end_lineno = node.end_lineno or node.lineno
+            res.append(Definition(
+                lineno=lineno,
+                end_lineno=end_lineno,
+                title=title
             ))
-        return res
+        return sorted(res, key=lambda x: x.lineno)
 
 
 def folder_files_content(
@@ -203,8 +224,7 @@ def folder_files_content(
 
 def chunk_folder_files(
         folder_path: str = 'data/raw/vllm-0.10.1',
-        max_chunk_size: int = 2000,
-        file_extension: list[str] = ['.txt', '.md', '.py']
+        max_chunk_size: int = 2000
 ) -> list[Chunk]:
     res: list[Chunk] = []
     files_content: dict[str, str] = folder_files_content(folder_path)
