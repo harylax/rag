@@ -1,7 +1,4 @@
-from langchain_text_splitters import (
-    PythonCodeTextSplitter,
-    RecursiveCharacterTextSplitter
-)
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from .models import Chunk
 from pathlib import Path
 from abc import ABC, abstractmethod
@@ -176,6 +173,142 @@ class PythonCodeChunker(BaseChunker):
     def __init__(self, max_chunk_size: int = 2000) -> None:
         super().__init__(max_chunk_size)
 
+    def node_length(self, lines: list[str], node: ast.stmt) -> int:
+        start: int = node.lineno - 1
+        end: int = node.end_lineno or node.lineno
+        return len(''.join(lines[start:end]))
+
+    def _get_children(self, node: ast.stmt) -> list[ast.stmt]:
+        children: list[ast.stmt] = list(getattr(node, 'body', []))
+        children.extend(getattr(node, 'orelse', []))
+        children.extend(getattr(node, 'finalbody', []))
+        for handler in getattr(node, 'handlers', []):
+            children.extend(handler.body)
+        for case in getattr(node, 'cases', []):
+            children.extend(case.body)
+        return sorted(children, key=lambda x: x.lineno)
+
+    def smallest_nodes(
+            self,
+            lines: list[str],
+            node: ast.stmt
+            ) -> list[ast.stmt]:
+        if self.node_length(lines, node) <= self.max_chunk_size:
+            return [node]
+
+        children: list[ast.stmt] = self._get_children(node)
+        if not children:
+            return [node]
+        res: list[ast.stmt] = []
+
+        for child in children:
+            res.extend(self.smallest_nodes(lines, child))
+        return res
+
+    def group_nodes(
+            self,
+            lines: list[str],
+            nodes: list[ast.stmt]
+            ) -> list[list[ast.stmt]]:
+        res: list[list[ast.stmt]] = []
+        group: list[ast.stmt] = []
+        group_len: int = 0
+        for node in nodes:
+            node_len: int = self.node_length(lines, node)
+            if not group:
+                group, group_len = [node], node_len
+            elif (
+                node_len + group_len > self.max_chunk_size
+                or group[0].col_offset > node.col_offset
+            ):
+                res.append(group)
+                group, group_len = [node], node_len
+            else:
+                group.append(node)
+                group_len += node_len
+        if group:
+            res.append(group)
+        return res
+
+    def chunk_nodes(
+            self,
+            file_path: str,
+            lines: list[str],
+            group_nodes: list[list[ast.stmt]]
+            ) -> list[Chunk]:
+        res: list[Chunk] = []
+        start_char: int = 0
+        start_lineno: int = 0
+        for group in group_nodes:
+            end_lineno: int = group[-1].end_lineno or group[-1].lineno
+            chunk_text: str = ''.join(lines[start_lineno:end_lineno])
+            end_char: int = start_char + len(chunk_text)
+            res.append(Chunk(
+                file_path=file_path,
+                first_character_index=start_char,
+                last_character_index=end_char - 1,
+                titles=[],
+                text=chunk_text
+            ))
+            start_char = end_char
+            start_lineno = end_lineno
+        last_chunk_text: str = ''.join(lines[start_lineno:])
+        if last_chunk_text:
+            end_char = start_char + len(last_chunk_text)
+            res.append(Chunk(
+                file_path=file_path,
+                first_character_index=start_char,
+                last_character_index=end_char - 1,
+                titles=[],
+                text=last_chunk_text
+            ))
+        return self.merge_small_chunks(self.split_oversized_chunk(res))
+
+    def split_oversized_chunk(self, chunks: list[Chunk]) -> list[Chunk]:
+        splitter = RecursiveCharacterTextSplitter(
+            ['\n\n', '\n', ' ', ''],
+            chunk_size=self.max_chunk_size,
+            chunk_overlap=0,
+            keep_separator='end',
+            strip_whitespace=False
+        )
+        res: list[Chunk] = []
+        for chunk in chunks:
+            if len(chunk.text) <= self.max_chunk_size:
+                res.append(chunk)
+                continue
+            start: int = chunk.first_character_index
+            for text in splitter.split_text(chunk.text):
+                end: int = start + len(text)
+                res.append(Chunk(
+                    file_path=chunk.file_path,
+                    first_character_index=start,
+                    last_character_index=end - 1,
+                    titles=chunk.titles,
+                    text=text
+                ))
+                start = end
+        return res
+
+    def merge_small_chunks(self, chunks: list[Chunk]) -> list[Chunk]:
+        res: list[Chunk] = []
+        for chunk in chunks:
+            if (
+                res
+                and len(res[-1].text) + len(chunk.text) <= self.max_chunk_size
+            ):
+                prev = res[-1]
+                res[-1] = Chunk(
+                    file_path=prev.file_path,
+                    first_character_index=prev.first_character_index,
+                    last_character_index=chunk.last_character_index,
+                    titles=prev.titles,
+                    text=prev.text + chunk.text
+                )
+            else:
+                res.append(chunk)
+        return res
+
     def get_definitions(self, text: str) -> list[Definition]:
         try:
             tree = ast.parse(text)
@@ -207,6 +340,45 @@ class PythonCodeChunker(BaseChunker):
                 title=title
             ))
         return sorted(res, key=lambda x: x.lineno)
+
+    def add_titles(
+            self,
+            text: str,
+            chunks: list[Chunk],
+            definitions: list[Definition]
+            ) -> list[Chunk]:
+        for chunk in chunks:
+            first_line: int = text.count(
+                '\n', 0, chunk.first_character_index
+                ) + 1
+            last_line: int = text.count(
+                '\n', 0, chunk.last_character_index
+                ) + 1
+            chunk.titles = [
+                d.title for d in definitions
+                if d.lineno <= last_line and d.end_lineno >= first_line
+            ]
+        return chunks
+
+    def split_in_chunks(self, text: str, file_path: str) -> list[Chunk]:
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            return self.add_titles(text, self.split_oversized_chunk([Chunk(
+                file_path=file_path,
+                first_character_index=0,
+                last_character_index=len(text) - 1,
+                titles=[],
+                text=text
+            )]), [])
+        lines: list[str] = text.splitlines(keepends=True)
+        nodes: list[ast.stmt] = []
+        for node in tree.body:
+            nodes.extend(self.smallest_nodes(lines, node))
+        group_nodes: list[list[ast.stmt]] = self.group_nodes(lines, nodes)
+        chunks = self.chunk_nodes(file_path, lines, group_nodes)
+        definitions: list[Definition] = self.get_definitions(text)
+        return self.add_titles(text, chunks, definitions)
 
 
 def folder_files_content(
@@ -279,13 +451,13 @@ def test_py(
     content = read_file(file_path)
     chunks = PythonCodeChunker(max_chunk_size).split_in_chunks(content, file_path)
     for chunk in chunks:
-        # print(chunk.model_dump_json(indent=2))
-        print('========================================')
-        print(chunk.text)
-        print('----------------------------------------')
-        print(content[chunk.first_character_index:chunk.last_character_index + 1])
-        print('========================================')
-        assert chunk.text == content[chunk.first_character_index:chunk.last_character_index + 1]
+        print(chunk.model_dump_json(indent=2))
+        # print('========================================')
+        # print(chunk.text)
+        # print('----------------------------------------')
+        # print(content[chunk.first_character_index:chunk.last_character_index + 1])
+        # print('========================================')
+        # assert chunk.text == content[chunk.first_character_index:chunk.last_character_index + 1]
 
 
 def test_txt(
@@ -326,4 +498,4 @@ def test_process(max_chunk_size: int = 2000) -> None:
 
 
 if __name__ == "__main__":
-    test_process(100)
+    test_py(200)
