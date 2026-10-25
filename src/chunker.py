@@ -195,12 +195,10 @@ class PythonCodeChunker(BaseChunker):
             ) -> list[ast.stmt]:
         if self.node_length(lines, node) <= self.max_chunk_size:
             return [node]
-
         children: list[ast.stmt] = self._get_children(node)
         if not children:
             return [node]
         res: list[ast.stmt] = []
-
         for child in children:
             res.extend(self.smallest_nodes(lines, child))
         return res
@@ -230,155 +228,103 @@ class PythonCodeChunker(BaseChunker):
             res.append(group)
         return res
 
-    def chunk_nodes(
-            self,
-            file_path: str,
-            lines: list[str],
-            group_nodes: list[list[ast.stmt]]
-            ) -> list[Chunk]:
-        res: list[Chunk] = []
-        start_char: int = 0
-        start_lineno: int = 0
-        for group in group_nodes:
-            end_lineno: int = group[-1].end_lineno or group[-1].lineno
-            chunk_text: str = ''.join(lines[start_lineno:end_lineno])
-            end_char: int = start_char + len(chunk_text)
-            res.append(Chunk(
-                file_path=file_path,
-                first_character_index=start_char,
-                last_character_index=end_char - 1,
-                titles=[],
-                text=chunk_text
-            ))
-            start_char = end_char
-            start_lineno = end_lineno
-        last_chunk_text: str = ''.join(lines[start_lineno:])
-        if last_chunk_text:
-            end_char = start_char + len(last_chunk_text)
-            res.append(Chunk(
-                file_path=file_path,
-                first_character_index=start_char,
-                last_character_index=end_char - 1,
-                titles=[],
-                text=last_chunk_text
-            ))
-        return self.merge_small_chunks(self.split_oversized_chunk(res))
+    def build_blocks(self, text: str, tree: ast.Module | None) -> list[str]:
+        if tree is None:
+            return [text]
+        lines: list[str] = text.splitlines(keepends=True)
+        nodes: list[ast.stmt] = []
+        for node in tree.body:
+            nodes.extend(self.smallest_nodes(lines, node))
+        blocks: list[str] = []
+        start: int = 0
+        for group in self.group_nodes(lines, nodes):
+            end: int = group[-1].end_lineno or group[-1].lineno
+            blocks.append(''.join(lines[start:end]))
+            start = end
+        tail: str = ''.join(lines[start:])
+        if tail:
+            blocks.append(tail)
+        return blocks
 
-    def split_oversized_chunk(self, chunks: list[Chunk]) -> list[Chunk]:
+    def split_oversized(self, blocks: list[str]) -> list[str]:
         splitter = RecursiveCharacterTextSplitter(
-            ['\n\n', '\n', ' ', ''],
             chunk_size=self.max_chunk_size,
             chunk_overlap=0,
             keep_separator='end',
             strip_whitespace=False
         )
-        res: list[Chunk] = []
-        for chunk in chunks:
-            if len(chunk.text) <= self.max_chunk_size:
-                res.append(chunk)
-                continue
-            start: int = chunk.first_character_index
-            for text in splitter.split_text(chunk.text):
-                end: int = start + len(text)
-                res.append(Chunk(
-                    file_path=chunk.file_path,
-                    first_character_index=start,
-                    last_character_index=end - 1,
-                    titles=chunk.titles,
-                    text=text
-                ))
-                start = end
-        return res
-
-    def merge_small_chunks(self, chunks: list[Chunk]) -> list[Chunk]:
-        res: list[Chunk] = []
-        for chunk in chunks:
-            if (
-                res
-                and len(res[-1].text) + len(chunk.text) <= self.max_chunk_size
-            ):
-                prev = res[-1]
-                res[-1] = Chunk(
-                    file_path=prev.file_path,
-                    first_character_index=prev.first_character_index,
-                    last_character_index=chunk.last_character_index,
-                    titles=prev.titles,
-                    text=prev.text + chunk.text
-                )
+        res: list[str] = []
+        for block in blocks:
+            if len(block) <= self.max_chunk_size:
+                res.append(block)
             else:
-                res.append(chunk)
+                res.extend(splitter.split_text(block))
         return res
 
-    def get_definitions(self, text: str) -> list[Definition]:
-        try:
-            tree = ast.parse(text)
-        except SyntaxError:
-            return []
+    def merge_small(self, blocks: list[str]) -> list[str]:
+        res: list[str] = []
+        for block in blocks:
+            if res and len(res[-1]) + len(block) <= self.max_chunk_size:
+                res[-1] += block
+            else:
+                res.append(block)
+        return res
+
+    def get_definitions(self, tree: ast.Module | None) -> list[Definition]:
         res: list[Definition] = []
+        if tree is None:
+            return res
         for node in ast.walk(tree):
             if not isinstance(node, (
                 ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef
             )):
                 continue
             if isinstance(node, ast.ClassDef):
-                title = f"class {node.name}"
-            elif isinstance(node, ast.FunctionDef):
-                title = f"def {node.name}"
+                prefix = 'class'
             elif isinstance(node, ast.AsyncFunctionDef):
-                title = f"async def {node.name}"
+                prefix = 'async def'
             else:
-                continue
+                prefix = 'def'
             lineno = (
                 node.decorator_list[0].lineno
                 if node.decorator_list
                 else node.lineno
             )
-            end_lineno = node.end_lineno or node.lineno
             res.append(Definition(
                 lineno=lineno,
-                end_lineno=end_lineno,
-                title=title
+                end_lineno=node.end_lineno or node.lineno,
+                title=f"{prefix} {node.name}"
             ))
         return sorted(res, key=lambda x: x.lineno)
 
-    def add_titles(
-            self,
-            text: str,
-            chunks: list[Chunk],
-            definitions: list[Definition]
-            ) -> list[Chunk]:
-        for chunk in chunks:
-            first_line: int = text.count(
-                '\n', 0, chunk.first_character_index
-                ) + 1
-            last_line: int = text.count(
-                '\n', 0, chunk.last_character_index
-                ) + 1
-            chunk.titles = [
-                d.title for d in definitions
-                if d.lineno <= last_line and d.end_lineno >= first_line
-            ]
-        return chunks
-
     def split_in_chunks(self, text: str, file_path: str) -> list[Chunk]:
         try:
-            tree = ast.parse(text)
+            tree: ast.Module | None = ast.parse(text)
         except SyntaxError:
-            return self.add_titles(text, self.split_oversized_chunk([Chunk(
+            tree = None
+        blocks = self.build_blocks(text, tree)
+        blocks = self.split_oversized(blocks)
+        blocks = self.merge_small(blocks)
+        definitions = self.get_definitions(tree)
+
+        res: list[Chunk] = []
+        start: int = 0
+        for block in blocks:
+            end: int = start + len(block)
+            first_line: int = text.count('\n', 0, start) + 1
+            last_line: int = text.count('\n', 0, end - 1) + 1
+            res.append(Chunk(
                 file_path=file_path,
-                first_character_index=0,
-                last_character_index=len(text) - 1,
-                titles=[],
-                text=text
-            )]), [])
-        lines: list[str] = text.splitlines(keepends=True)
-        nodes: list[ast.stmt] = []
-        for node in tree.body:
-            nodes.extend(self.smallest_nodes(lines, node))
-        group_nodes: list[list[ast.stmt]] = self.group_nodes(lines, nodes)
-        chunks = self.chunk_nodes(file_path, lines, group_nodes)
-        definitions: list[Definition] = self.get_definitions(text)
-        return self.add_titles(text, chunks, definitions)
+                first_character_index=start,
+                last_character_index=end - 1,
+                titles=[
+                    d.title for d in definitions
+                    if d.lineno <= last_line and d.end_lineno >= first_line
+                ],
+                text=block
+            ))
+            start = end
+        return res
 
 
 def folder_files_content(
@@ -451,7 +397,8 @@ def test_py(
     content = read_file(file_path)
     chunks = PythonCodeChunker(max_chunk_size).split_in_chunks(content, file_path)
     for chunk in chunks:
-        print(chunk.model_dump_json(indent=2))
+        if chunk.titles:
+            print(chunk.model_dump_json(indent=2))
         # print('========================================')
         # print(chunk.text)
         # print('----------------------------------------')
