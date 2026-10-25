@@ -1,10 +1,12 @@
-from bm25s import BM25, tokenize
+from bm25s import BM25
 from .chunker import chunk_folder_files
 from .models import Chunk, MinimalSource
 from pathlib import Path
 from typing import Any
 import json
 from tqdm import tqdm
+# from .utils import tokenize_code, tokenize_docs
+from bm25s import tokenize
 
 
 class Indexer:
@@ -76,12 +78,24 @@ class Indexer:
             json.dumps(data, indent=2)
         )
 
+    # def get_tokens(self, chunks: list[Chunk]) -> list[list[str]]:
+    #     res = []
+    #     for chunk in tqdm(chunks, desc='Tokenizing', unit=' chunk'):
+    #         titles: str = '\n'.join(chunk.titles)
+    #         path: str = str(Path(chunk.file_path).stem)
+    #         text: str = path + '\n' + titles + '\n' + chunk.text
+    #         if Path(chunk.file_path).suffix == '.py':
+    #             res.append(tokenize_code(text))
+    #         else:
+    #             res.append(tokenize_docs(text))
+    #     return res
+
     def get_tokens(self, chunks: list[Chunk]) -> Any:
         res = []
         for chunk in tqdm(chunks, desc='Tokenizing', unit=' chunk'):
             titles: str = '\n'.join(chunk.titles)
             path: str = str(Path(chunk.file_path).stem)
-            res.append(path + titles + chunk.text)
+            res.append(path + '\n' + titles + '\n' + chunk.text)
         return tokenize(res)
 
     def corpus_checker(
