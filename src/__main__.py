@@ -1,6 +1,7 @@
 from .indexer import Indexer
-from .retriever import Retriever
+from .retrieve import Retriever
 from fire import Fire
+from .answer import Answer
 
 
 class CLI:
@@ -33,6 +34,20 @@ class CLI:
         Retriever().search_dataset(
             dataset_path, k, save_directory
             )
+
+    def answer(
+            self,
+            question: str,
+            k: int = 3
+    ) -> None:
+        Answer().answer(question, k)
+
+    def answer_dataset(
+            self,
+            student_search_results_path: str = 'data/output/search_results/UnansweredQuestion/datasets_docs_public.json',
+            save_directory: str = 'data/output/search_results_and_answer/UnansweredQuestions/dataset_docs_public.json'
+    ) -> None:
+        Answer().answer_dataset(student_search_results_path, save_directory)
 
 
 if __name__ == "__main__":

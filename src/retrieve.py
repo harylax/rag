@@ -1,14 +1,27 @@
 from bm25s import BM25, tokenize
-from .models import MinimalSource, MinimalSearchResults, RagDataset, StudentSearchResults
+from .models import (
+    MinimalSource, MinimalSearchResults, RagDataset, StudentSearchResults
+    )
 import uuid
 from pathlib import Path
 from tqdm import tqdm
 import json
+from pydantic import ValidationError
 
 
 class Retriever:
     def __init__(self) -> None:
-        self.bm25 = BM25().load('data/processed')
+        try:
+            self.bm25 = BM25().load('data/processed')
+        except OSError as err:
+            print(
+                "\033[31m"
+                f"{err.__class__.__name__}: {err}\n"
+                "Index missing in data/processed.\nUsage: "
+                "uv run python -m src index --max_chunk_size <int>"
+                "\033[0m"
+                )
+            exit(1)
         sources_path = Path('data/processed/sources.json')
         self.sources: list[MinimalSource] = [
                 MinimalSource.model_validate(source)
@@ -37,9 +50,19 @@ class Retriever:
             k: int = 3,
             save_directory: str = 'data/output/search_results/UnansweredQuestions'
             ) -> None:
-        rag_dataset = RagDataset.model_validate_json(
-            Path(dataset_path).read_text()
-            )
+
+        try:
+            rag_dataset = RagDataset.model_validate_json(
+                Path(dataset_path).read_text()
+                )
+        except OSError as err:
+            print(f"\033[31m{err.__class__.__name__}: {err}\033[0m")
+            exit(1)
+        except ValidationError as err:
+            for error in err.errors():
+                print(f"\033[31mValidationError: {error['msg']}\033[0m")
+            exit(1)
+
         search_results: list[MinimalSearchResults] = []
         for unanswered_question in tqdm(
             rag_dataset.rag_questions, desc='Searching', unit=' question'
