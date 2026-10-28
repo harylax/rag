@@ -34,7 +34,11 @@ class Retriever:
             k: int = 3,
             question_id: str = str(uuid.uuid4())
             ) -> MinimalSearchResults:
-        indices, _ = self.bm25.retrieve(tokenize(question), k=k)
+        try:
+            indices, _ = self.bm25.retrieve(tokenize(question), k=k)
+        except ValueError as err:
+            print(f"\033[31mValueError: {err}\033[0m")
+            exit(1)
         return MinimalSearchResults(
             question_id=question_id,
             question=question,

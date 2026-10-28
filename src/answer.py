@@ -12,9 +12,21 @@ from tqdm import tqdm
 
 MAX_CONTEXT_CHARS: int = 7000
 
+
 class Answer:
     def __init__(self, model: str = 'qwen3:0.6b') -> None:
         self.model: str = model
+        self.check_ollama()
+
+    def check_ollama(self) -> None:
+        try:
+            ollama.show(self.model)
+        except Exception as err:
+            print(
+                f"\033[31m{err.__class__.__name__}: {err}\n"
+                f"Usage: make install\033[0m"
+            )
+            exit(1)
 
     @staticmethod
     def read_source_text(source: MinimalSource) -> str:
