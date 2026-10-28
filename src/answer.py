@@ -4,7 +4,6 @@ from .models import (
     StudentSearchResultsAndAnswer, StudentSearchResults,
     MinimalAnswer
     )
-from .utils import read_source_text
 from .retrieve import Retriever
 from typing import Any
 from pathlib import Path
@@ -16,21 +15,33 @@ class Answer:
         self.model: str = model
 
     @staticmethod
+    def read_source_text(source: MinimalSource) -> str:
+        file_content: str = Path(source.file_path).read_text()
+        start: int = source.first_character_index
+        end: int = source.last_character_index + 1
+        return file_content[start:end]
+
+    @staticmethod
     def build_context(retrieved_sources: list[MinimalSource]) -> str:
         res: list[str] = []
         for i, source in enumerate(retrieved_sources, start=1):
-            res.append(f"[{i}] {read_source_text(source).strip()}")
-        return '\n'.join(res)
+            res.append(
+                f"[{i}] {source.file_path!r}\n"
+                f"{Answer.read_source_text(source).strip()}"
+                )
+        return '\n\n'.join(res)
 
-    def build_prompt(self, question: str, k: int = 3) -> str:
-        search_results: MinimalSearchResults = \
-            Retriever().search(question, k)
+    @staticmethod
+    def build_prompt(
+        question: str,
+        search_results: MinimalSearchResults
+            ) -> str:
         res: str = 'Read the following chunks of documents:\n'
-        res += self.build_context(search_results.retrieved_sources)
+        res += Answer.build_context(search_results.retrieved_sources)
         res += (
-            '\nOnly answer the following question based on the '
+            '\n\nOnly answer the following question based on the '
             'previous provided documents. If you cannot find the '
-            'answer in the documents, just say "I do not know"\n'
+            'answer in the documents, just say "I don\'t know"\n'
         )
         res += f'The question :"{question}"\n'
         return res
@@ -38,9 +49,9 @@ class Answer:
     def answer(
             self,
             question: str,
-            k: int = 3,
-            stream: bool = True
+            k: int = 3
     ) -> str:
+        search_results: MinimalSearchResults = Retriever().search(question, k)
         response: Any = ollama.chat(
             model=self.model,
             messages=[
@@ -53,15 +64,13 @@ class Answer:
                 },
                 {
                     'role': 'user',
-                    'content': self.build_prompt(question, k)
+                    'content': self.build_prompt(question, search_results)
                 }
             ],
             think=False,
-            stream=stream,
+            stream=True,
             options={'temperature': 0, 'num_ctx': 4096, 'num_predict': 200}
         )
-        if not stream:
-            return response['message']['content']
         print(f"\033[32m>>>Query: {question!r}\033[0m")
         print("\033[33mAnswer: \033[0m", end='')
         generated: str = ''
@@ -71,6 +80,35 @@ class Answer:
             print(f"\033[33m{content}\033[0m", end='', flush=True)
         print()
         return generated
+
+    def _answer(self, minimal_search_results: MinimalSearchResults) -> MinimalAnswer:
+        response: Any = ollama.chat(
+            model=self.model,
+            messages=[
+                {
+                    'role': 'system',
+                    'content': (
+                        'You are a RAG assistant. '
+                        'Only answer in 1 to 3 sentences.'
+                    )
+                },
+                {
+                    'role': 'user',
+                    'content': self.build_prompt(
+                        minimal_search_results.question,
+                        minimal_search_results
+                        )
+                }
+            ],
+            think=False,
+            options={'temperature': 0, 'num_ctx': 4096, 'num_predict': 200}
+        )
+        return MinimalAnswer(
+            question_id=minimal_search_results.question_id,
+            question=minimal_search_results.question,
+            retrieved_sources=minimal_search_results.retrieved_sources,
+            answer=response['message']['content']
+        )
 
     def answer_dataset(
             self,
@@ -101,12 +139,7 @@ class Answer:
             desc='Answering',
             unit=' question'
         ):
-            answers.append(MinimalAnswer(
-                question_id=search_res.question_id,
-                question=search_res.question,
-                retrieved_sources=search_res.retrieved_sources,
-                answer=self.answer(search_res.question, k, False)
-            ))
+            answers.append(self._answer(search_res))
 
         student_search_results_and_answer = StudentSearchResultsAndAnswer(
             search_results=answers, k=k
@@ -119,3 +152,10 @@ class Answer:
         )
 
         return student_search_results_and_answer
+
+
+if __name__ == "__main__":
+    from .indexer import Indexer
+    Indexer(max_chunk_size=800)
+    prompt = Answer.build_prompt('How can I configure the vLLM Base Code?', 10)
+    print(prompt)

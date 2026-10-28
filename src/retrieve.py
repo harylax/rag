@@ -28,7 +28,7 @@ class Retriever:
                 for source in json.loads(sources_path.read_text())
             ]
 
-    def get_query_sources(
+    def get_question_corresponding_sources(
             self,
             question: str,
             k: int = 3,
@@ -42,7 +42,7 @@ class Retriever:
         )
 
     def search(self, question: str, k: int = 3) -> MinimalSearchResults:
-        return self.get_query_sources(question, k)
+        return self.get_question_corresponding_sources(question, k)
 
     def search_dataset(
             self,
@@ -67,7 +67,7 @@ class Retriever:
         for unanswered_question in tqdm(
             rag_dataset.rag_questions, desc='Searching', unit=' question'
                 ):
-            search_results.append(self.get_query_sources(
+            search_results.append(self.get_question_corresponding_sources(
                 unanswered_question.question,
                 k,
                 unanswered_question.question_id
