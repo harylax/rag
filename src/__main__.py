@@ -44,8 +44,8 @@ class CLI:
 
     def answer_dataset(
             self,
-            student_search_results_path: str = 'data/output/search_results/UnansweredQuestion/datasets_docs_public.json',
-            save_directory: str = 'data/output/search_results_and_answer/UnansweredQuestions/dataset_docs_public.json'
+            student_search_results_path: str = 'data/output/search_results/UnansweredQuestions/dataset_docs_public.json',
+            save_directory: str = 'data/output/search_results_and_answer/UnansweredQuestions'
     ) -> None:
         Answer().answer_dataset(student_search_results_path, save_directory)
 

@@ -10,6 +10,8 @@ from pathlib import Path
 from tqdm import tqdm
 
 
+MAX_CONTEXT_CHARS: int = 7000
+
 class Answer:
     def __init__(self, model: str = 'qwen3:0.6b') -> None:
         self.model: str = model
@@ -22,13 +24,23 @@ class Answer:
         return file_content[start:end]
 
     @staticmethod
-    def build_context(retrieved_sources: list[MinimalSource]) -> str:
+    def build_context(
+        retrieved_sources: list[MinimalSource],
+        max_chars: int = MAX_CONTEXT_CHARS
+            ) -> str:
         res: list[str] = []
+        remaining: int = max_chars
         for i, source in enumerate(retrieved_sources, start=1):
-            res.append(
+            part: str = (
                 f"[{i}] {source.file_path!r}\n"
                 f"{Answer.read_source_text(source).strip()}"
-                )
+            )
+            if len(part) > remaining:
+                if remaining > 200:
+                    res.append(part[:remaining])
+                break
+            res.append(part)
+            remaining -= len(part) + 2
         return '\n\n'.join(res)
 
     @staticmethod
@@ -156,6 +168,9 @@ class Answer:
 
 if __name__ == "__main__":
     from .indexer import Indexer
-    Indexer(max_chunk_size=800)
-    prompt = Answer.build_prompt('How can I configure the vLLM Base Code?', 10)
+    Indexer(max_chunk_size=2000)
+    question = 'How can I configure the vLLM Base Code?'
+    results = Retriever().search(question, 10)
+    prompt = Answer.build_prompt(question, results)
     print(prompt)
+    print(f"\nPrompt length: {len(prompt)} characters")
