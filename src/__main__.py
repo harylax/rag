@@ -2,6 +2,7 @@ from .indexer import Indexer
 from .retrieve import Retriever
 from fire import Fire
 from .answer import Answer
+from .evaluate import evaluate
 
 
 class CLI:
@@ -48,6 +49,18 @@ class CLI:
             save_directory: str = 'data/output/search_results_and_answer/UnansweredQuestions'
     ) -> None:
         Answer().answer_dataset(student_search_results_path, save_directory)
+
+    def evaluate(
+            self,
+            student_search_results_path: str = (
+                'data/output/search_results/UnansweredQuestions/'
+                'dataset_docs_public.json'
+            ),
+            dataset_path: str = (
+                'data/datasets/AnsweredQuestions/dataset_docs_public.json'
+            )
+    ) -> None:
+        evaluate(student_search_results_path, dataset_path)
 
 
 if __name__ == "__main__":
