@@ -1,5 +1,13 @@
 from .models import MinimalSource, StudentSearchResults, RagDataset
 from pathlib import Path
+import sys
+from pydantic import ValidationError
+
+IOU_THRESHOLD: float = 0.05
+STUDENT_SEARCH_RESULTS_PATH: str = (
+    'data/output/search_results/UnansweredQuestions/dataset_docs_public.json'
+)
+DATASET_PATH: str = 'data/datasets/AnsweredQuestions/dataset_docs_public.json'
 
 
 def iou(found: MinimalSource, expected: MinimalSource) -> float:
@@ -29,7 +37,7 @@ def score_at_k(
         ) -> float:
     top_k: list[MinimalSource] = retrieved[:k]
     found: int = sum(
-        any(iou(f, e) > 0.05 for f in top_k)
+        any(iou(f, e) > IOU_THRESHOLD for f in top_k)
         for e in expected
         )
     return found / len(expected)
@@ -48,16 +56,29 @@ def recall_at_k(
 
 
 def evaluate(
-        student_search_results_path: str = 'data/output/search_results/UnansweredQuestions/dataset_docs_public.json',
-        dataset_path: str = 'data/datasets/AnsweredQuestions/dataset_docs_public.json'
+        student_search_results_path: str = STUDENT_SEARCH_RESULTS_PATH,
+        dataset_path: str = DATASET_PATH
         ) -> None:
-
-    students_search_results = StudentSearchResults.model_validate_json(
-        Path(student_search_results_path).read_text()
+    try:
+        students_search_results = StudentSearchResults.model_validate_json(
+            Path(student_search_results_path).read_text()
+            )
+        rag_dataset = RagDataset.model_validate_json(
+            Path(dataset_path).read_text()
+            )
+    except OSError as err:
+        print(
+            f"\033[31m{err.__class__.__name__}: {err}\033[0m",
+            file=sys.stderr
         )
-    rag_dataset = RagDataset.model_validate_json(
-        Path(dataset_path).read_text()
-        )
+        sys.exit(1)
+    except ValidationError as err:
+        for error in err.errors():
+            print(
+                f"\033[31mValidationError: {error['msg']}\033[0m",
+                file=sys.stderr
+            )
+        sys.exit(1)
 
     expected: dict[str, list[MinimalSource]] = {
         q.question_id: q.sources

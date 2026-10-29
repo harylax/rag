@@ -28,9 +28,13 @@ class CLI:
 
     def search_dataset(
             self,
-            dataset_path: str = 'data/datasets/UnansweredQuestions/dataset_docs_public.json',
+            dataset_path: str = (
+                'data/datasets/UnansweredQuestions/dataset_docs_public.json'
+                ),
             k: int = 3,
-            save_directory: str = 'data/output/search_results/UnansweredQuestions'
+            save_directory: str = (
+                'data/output/search_results/UnansweredQuestions'
+                )
     ) -> None:
         Retriever().search_dataset(
             dataset_path, k, save_directory
@@ -45,8 +49,13 @@ class CLI:
 
     def answer_dataset(
             self,
-            student_search_results_path: str = 'data/output/search_results/UnansweredQuestions/dataset_docs_public.json',
-            save_directory: str = 'data/output/search_results_and_answer/UnansweredQuestions'
+            student_search_results_path: str = (
+                'data/output/search_results/UnansweredQuestions'
+                '/dataset_docs_public.json'
+            ),
+            save_directory: str = (
+                'data/output/search_results_and_answer/UnansweredQuestions'
+            )
     ) -> None:
         Answer().answer_dataset(student_search_results_path, save_directory)
 

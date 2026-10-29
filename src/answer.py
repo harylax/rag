@@ -8,6 +8,8 @@ from .retrieve import Retriever
 from typing import Any
 from pathlib import Path
 from tqdm import tqdm
+import sys
+from pydantic import ValidationError
 
 
 MAX_CONTEXT_CHARS: int = 7000
@@ -24,16 +26,20 @@ class Answer:
         except Exception as err:
             print(
                 f"\033[31m{err.__class__.__name__}: {err}\n"
-                f"Usage: make install\033[0m"
+                "Usage: make install\033[0m",
+                file=sys.stderr
             )
-            exit(1)
+            sys.exit(1)
 
     @staticmethod
     def read_source_text(source: MinimalSource) -> str:
-        file_content: str = Path(source.file_path).read_text()
-        start: int = source.first_character_index
-        end: int = source.last_character_index + 1
-        return file_content[start:end]
+        try:
+            file_content: str = Path(source.file_path).read_text()
+            start: int = source.first_character_index
+            end: int = source.last_character_index + 1
+            return file_content[start:end]
+        except OSError:
+            return ''
 
     @staticmethod
     def build_context(
@@ -105,7 +111,10 @@ class Answer:
         print()
         return generated
 
-    def _answer(self, minimal_search_results: MinimalSearchResults) -> MinimalAnswer:
+    def _answer(
+            self,
+            minimal_search_results: MinimalSearchResults
+            ) -> MinimalAnswer:
         response: Any = ollama.chat(
             model=self.model,
             messages=[
@@ -142,20 +151,39 @@ class Answer:
         search_path = Path(student_search_results_path)
 
         if not search_path.exists():
-            dataset_path = Path('data/datasets/UnansweredQuestions') / search_path.name
+            dataset_path = Path(
+                'data/datasets/UnansweredQuestions'
+                ) / search_path.name
             print(
                 "\033[31m"
                 f"student_search_result_path: '{student_search_results_path}' "
                 "not found.\nUsage: uv run python -m src search_dataset \\"
                 f"\n--dataset_path {dataset_path} --k <int> \\"
-                f"\n--save_directory data/output/search_results/UnansweredQuestions"
-                "\033[0m"
+                "\n--save_directory "
+                "data/output/search_results/UnansweredQuestions"
+                "\033[0m",
+                file=sys.stderr
             )
-            exit(1)
+            sys.exit(1)
 
-        student_search_results = StudentSearchResults.model_validate_json(
-            search_path.read_text()
+        try:
+            student_search_results = StudentSearchResults.model_validate_json(
+                search_path.read_text()
+                )
+        except OSError as err:
+            print(
+                f"\033[31m{err.__class__.__name__}: {err}\033[0m",
+                file=sys.stderr
             )
+            sys.exit(1)
+        except ValidationError as err:
+            for error in err.errors():
+                print(
+                    f"\033[31mValidationError: {error['msg']}\033[0m",
+                    file=sys.stderr
+                )
+            sys.exit(1)
+
         k: int = student_search_results.k
         answers: list[MinimalAnswer] = []
         for search_res in tqdm(
@@ -178,11 +206,11 @@ class Answer:
         return student_search_results_and_answer
 
 
-if __name__ == "__main__":
-    from .indexer import Indexer
-    Indexer(max_chunk_size=2000)
-    question = 'How can I configure the vLLM Base Code?'
-    results = Retriever().search(question, 10)
-    prompt = Answer.build_prompt(question, results)
-    print(prompt)
-    print(f"\nPrompt length: {len(prompt)} characters")
+# if __name__ == "__main__":
+#     from .indexer import Indexer
+#     Indexer(max_chunk_size=2000)
+#     question = 'How can I configure the vLLM Base Code?'
+#     results = Retriever().search(question, 10)
+#     prompt = Answer.build_prompt(question, results)
+#     print(prompt)
+#     print(f"\nPrompt length: {len(prompt)} characters")

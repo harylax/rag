@@ -7,6 +7,10 @@ from pathlib import Path
 from tqdm import tqdm
 import json
 from pydantic import ValidationError
+import sys
+
+DATASET: str = 'data/datasets/UnansweredQuestions/dataset_docs_public.json'
+SAVE_DIR: str = 'data/output/search_results/UnansweredQuestions'
 
 
 class Retriever:
@@ -19,9 +23,10 @@ class Retriever:
                 f"{err.__class__.__name__}: {err}\n"
                 "Index missing in data/processed.\nUsage: "
                 "uv run python -m src index --max_chunk_size <int>"
-                "\033[0m"
+                "\033[0m",
+                file=sys.stderr
                 )
-            exit(1)
+            sys.exit(1)
         sources_path = Path('data/processed/sources.json')
         self.sources: list[MinimalSource] = [
                 MinimalSource.model_validate(source)
@@ -37,8 +42,8 @@ class Retriever:
         try:
             indices, _ = self.bm25.retrieve(tokenize(question), k=k)
         except ValueError as err:
-            print(f"\033[31mValueError: {err}\033[0m")
-            exit(1)
+            print(f"\033[31mValueError: {err}\033[0m", file=sys.stderr)
+            sys.exit(1)
         return MinimalSearchResults(
             question_id=question_id,
             question=question,
@@ -50,9 +55,9 @@ class Retriever:
 
     def search_dataset(
             self,
-            dataset_path: str = 'data/datasets/UnansweredQuestions/dataset_docs_public.json',
+            dataset_path: str = DATASET,
             k: int = 3,
-            save_directory: str = 'data/output/search_results/UnansweredQuestions'
+            save_directory: str = SAVE_DIR
             ) -> None:
 
         try:
@@ -60,12 +65,18 @@ class Retriever:
                 Path(dataset_path).read_text()
                 )
         except OSError as err:
-            print(f"\033[31m{err.__class__.__name__}: {err}\033[0m")
-            exit(1)
+            print(
+                f"\033[31m{err.__class__.__name__}: {err}\033[0m",
+                file=sys.stderr
+                )
+            sys.exit(1)
         except ValidationError as err:
             for error in err.errors():
-                print(f"\033[31mValidationError: {error['msg']}\033[0m")
-            exit(1)
+                print(
+                    f"\033[31mValidationError: {error['msg']}\033[0m",
+                    file=sys.stderr
+                    )
+            sys.exit(1)
 
         search_results: list[MinimalSearchResults] = []
         for unanswered_question in tqdm(
@@ -86,27 +97,27 @@ class Retriever:
         print(f"Saved student_search_results to {save_path}")
 
 
-def read_source(source: MinimalSource) -> str:
-    file_path = Path(source.file_path)
-    try:
-        file_content: str = file_path.read_text()
-        start = source.first_character_index
-        end = source.last_character_index
-        return file_content[start:end + 1]
-    except OSError as err:
-        print(f"\033[31m{err.__class__.__name__}: {err}\033[0m")
-        exit(1)
+# def read_source(source: MinimalSource) -> str:
+#     file_path = Path(source.file_path)
+#     try:
+#         file_content: str = file_path.read_text()
+#         start = source.first_character_index
+#         end = source.last_character_index
+#         return file_content[start:end + 1]
+#     except OSError as err:
+#         print(f"\033[31m{err.__class__.__name__}: {err}\033[0m")
+#         exit(1)
 
 
-if __name__ == "__main__":
-    retriever = Retriever()
-    sources = retriever.search("How can I configure OpenAI?", 10)
-    for source in sources.retrieved_sources:
-        print("=====================================")
-        print(f"path: {source.file_path!r}")
-        print("-------------------------------------")
-        print(">>>SOURCE<<<")
-        print(read_source(source))
-        print("=====================================")
-    # import json
-    # print(json.dumps([source.model_dump() for source in sources], indent=2))
+# if __name__ == "__main__":
+#     retriever = Retriever()
+#     sources = retriever.search("How can I configure OpenAI?", 10)
+#     for source in sources.retrieved_sources:
+#         print("=====================================")
+#         print(f"path: {source.file_path!r}")
+#         print("-------------------------------------")
+#         print(">>>SOURCE<<<")
+#         print(read_source(source))
+#         print("=====================================")
+#     # import json
+#     # print(json.dumps([source.model_dump() for source in sources], indent=2))
