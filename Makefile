@@ -4,6 +4,7 @@ PYTHON=uv run python -m
 MAIN=src
 ARG?=
 export OLLAMA_MODELS
+export UV_CACHE_DIR=$(HOME)/goinfre/uv_cache
 
 .PHONY: all install serve run clean lint lint-strict kill
 
