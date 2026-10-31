@@ -112,7 +112,7 @@ uv run python -m src evaluate \
 
 ## Resources
 
-- [Abstract Syntax Trees (python `ast`)](https://docs.python.org/3/library/ast.html)
+- [Abstract Syntax Trees](https://docs.python.org/3/library/ast.html) - `ast`
 - [What is BM25?](https://www.geeksforgeeks.org/nlp/what-is-bm25-best-matching-25-algorithm/)
 - [Okapi BM25 (wikipedia)](https://en.wikipedia.org/wiki/Okapi_BM25)
 - [bm25s (github)](https://github.com/xhluca/bm25s)
@@ -120,6 +120,7 @@ uv run python -m src evaluate \
 - [langchain text splitters (documentation)](https://docs.langchain.com/oss/python/integrations/splitters/recursive_text_splitter) - `RecursiveCharacterTextSplitter`
 - [langchain-text-splitters (github)](https://github.com/langchain-ai/langchain/tree/master/libs/text-splitters)
 - [Python Fire](https://github.com/google/python-fire)
+- [unicode symbol](https://www.unicodelibrary.com/category)
 
 ### AI Usage
 
@@ -130,9 +131,66 @@ AI tools were used as assistants for:
 
 ## System architecture
 
+```
+┌───────────┐
+│   Corpus  │ data/raw/vllm-0.10.1 (.py, .md, .txt)
+└───────────┘
+      ⇩
+┌───────────┐
+│  Chunker  │ TextChunker - MarkdownChunker - PythonCodeChunker
+└───────────┘   ➥ list[Chunk]
+      ⇩                   ➥ file_path, first/last char index, titles, text
+┌───────────┐
+│  Indexer  │ bm25s tokenizer + BM25 index
+└───────────┘   ➥ data/processed/ (index, vocab, sources.json, corpus_checker.json)
+      ⇩
+┌───────────┐
+│ Retriever │ BM25 retrieve - question ➙ index ➙ top-k MinimalSource
+└───────────┘   ➣ search_dataset ➙ evaluate - Recall@k
+      ⇩
+┌───────────┐
+│   Answer  │ Context built from sources ➙ Ollama (qwen3:0.6b)
+└───────────┘   ➥ short answer
+```
+| Module            | Role                      |
+|-------------------|---------------------------|
+| `src/chunker.py`  | Splits each file into chunks, with distinct strategy for `.py`, and `.md` and `.txt`  |
+| `src/indexer.py`  | Builds and saves the BM25 index; skips the work if the corpus or chunk size are unchanged |
+| `src/retrieve.py` | Loads the index and returns the top-k sources for a question or a dataset |
+| `src/evaluate.py` | Computes recall@k against the answered dataset |
+| `src/answer.py`   | Builds the prompt from the retrieved sources and queries the local model |
+| `src/models.py`   | Pydantic models shared by all stages (`Chunk`, `MinimalSource`, ...) |
+| `src/__main__.py` | Command-line interface (Python Fire) |
+
+
 ## Chunking strategy
 
+- **Python (`.py`)**: 
+  1. the file is parsed with `ast` to get the top-level statements
+  2. a statement that fits in the chunk size is kept as it is; a larger node is split recursively into its children until it fits or has no children left
+  3. small consecutive statements are grouped while they fit, as long as they are not less indented that the first statement of the group
+  4. each group is turned into a block of text (including all the text between statements); big blocks are splitted with `RecursiveCharacterTextSplitter` without chunk overlap and keeping separator at the end of the block
+  5. tiny blocks are merged with their neighbor until the result is larger than chunk size
+  6. the parsed file is walked through again to get definitions (`class ...`, `def ...`) as `titles`
+  7. if the file has a python syntax error, it falls back to the langchain recursive splitter
+  8. the chunks are built with the final blocks of text and the titles corresponding (ovelapping chunk lines) obtained previously
+- **Markdown (`.md`) / text (`.txt`)**:
+  1. markdown files are splitted in chunks at each heading (`#` to `######`), ignoring lines inside code fences; the heading hierarchy is stored as `titles`
+  2. heading lines are removed from the chunk text 
+  3. larger chunks are splitted with `RecursiveCharacterTextSplitter` with the separators `\n\n`, `\n`, `. `, space
+  4. text files are directly splitted with `RecursiveCharacterTextSplitter` with the same separators
+
+Markdown and Text are split with a 10% overlap to keep a whole sentence.
+
+Python chunker doesn't need overlap, since its chunks already follow the code structure.
+
 ## Retrieval method
+
+**BM25** of the `bm25s` was used to index the chunks in `data/processed/`.
+
+The same **BM25** is used to load the index and retrieve the top-k sources corresponding to a question.
+
+If it's a dataset of questions, the same method is called for each question, and the list of retrieved sources corresponding to each question is stored in a JSON result file.
 
 ## Performance analysis
 
