@@ -177,7 +177,7 @@ AI tools were used as assistants for:
 - **Markdown (`.md`) / text (`.txt`)**:
   1. markdown files are split in chunks at each heading (`#` to `######`), ignoring lines inside code fences; the heading hierarchy is stored as `titles`
   2. heading lines are removed from the chunk text 
-  3. larger chunks are splitted with `RecursiveCharacterTextSplitter` with the separators `\n\n`, `\n`, `. `, space
+  3. larger chunks are split with `RecursiveCharacterTextSplitter` with the separators `\n\n`, `\n`, `. `, space
   4. text files are directly splitted with `RecursiveCharacterTextSplitter` with the same separators
 
 Markdown and Text are split with a 10% overlap to keep a whole sentence.
