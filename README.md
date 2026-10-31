@@ -175,7 +175,7 @@ AI tools were used as assistants for:
   7. if the file has a python syntax error, it falls back to the langchain recursive splitter
   8. the chunks are built with the final blocks of text and the titles corresponding (ovelapping chunk lines) obtained previously
 - **Markdown (`.md`) / text (`.txt`)**:
-  1. markdown files are splitted in chunks at each heading (`#` to `######`), ignoring lines inside code fences; the heading hierarchy is stored as `titles`
+  1. markdown files are split in chunks at each heading (`#` to `######`), ignoring lines inside code fences; the heading hierarchy is stored as `titles`
   2. heading lines are removed from the chunk text 
   3. larger chunks are splitted with `RecursiveCharacterTextSplitter` with the separators `\n\n`, `\n`, `. `, space
   4. text files are directly splitted with `RecursiveCharacterTextSplitter` with the same separators
