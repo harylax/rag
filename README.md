@@ -186,7 +186,7 @@ Python chunker doesn't need overlap, since its chunks already follow the code st
 
 ## Retrieval method
 
-The `bm25s` library and its main class **BM25** was used for this project for the indexing and retrieval part. I did not reimplement the BM25 algorithm.
+The `bm25s` library and its main class **BM25** were used for this project for the indexing and retrieval part. I did not reimplement the BM25 algorithm.
 
 - `tokenize()`: transforms the chunk text, titles and file name (or the question) into tokens.
 - `index()`: computes the term frequency in each chunk, the document frequency of each term in the corpus, the IDF (rareness) of each token, and the length of each chunk. 
