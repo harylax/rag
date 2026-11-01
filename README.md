@@ -112,6 +112,8 @@ uv run python -m src evaluate \
 
 ## Resources
 
+- 42 RAG against the machine subject
+- vllm-0.10.1 codebase
 - [Abstract Syntax Trees](https://docs.python.org/3/library/ast.html) - `ast`
 - [What is BM25?](https://www.geeksforgeeks.org/nlp/what-is-bm25-best-matching-25-algorithm/)
 - [Okapi BM25 (wikipedia)](https://en.wikipedia.org/wiki/Okapi_BM25)
@@ -126,8 +128,8 @@ uv run python -m src evaluate \
 
 AI tools were used as assistants for:
 
-- Explaining BM25 scoring and how to use it
-- 
+- Explaining BM25 scoring and how to use the `bm25s` library.
+- Explaining the `langchain-text-splitters` library and how to use it.
 
 ## System architecture
 
@@ -168,12 +170,12 @@ AI tools were used as assistants for:
 - **Python (`.py`)**: 
   1. the file is parsed with `ast` to get the top-level statements
   2. a statement that fits in the chunk size is kept as it is; a larger node is split recursively into its children until it fits or has no children left
-  3. small consecutive statements are grouped while they fit, as long as they are not less indented that the first statement of the group
-  4. each group is turned into a block of text (including all the text between statements); big blocks are splitted with `RecursiveCharacterTextSplitter` without chunk overlap and keeping separator at the end of the block
+  3. small consecutive statements are grouped while they fit, as long as they are not less indented than the first statement of the group
+  4. each group is turned into a block of text (including all the text between statements); big blocks are split with `RecursiveCharacterTextSplitter` without chunk overlap and keeping separator at the end of the block
   5. tiny blocks are merged with their neighbor until the result is larger than chunk size
   6. the parsed file is walked through again to get definitions (`class ...`, `def ...`) as `titles`
   7. if the file has a python syntax error, it falls back to the langchain recursive splitter
-  8. the chunks are built with the final blocks of text and the titles corresponding (ovelapping chunk lines) obtained previously
+  8. the chunks are built with the final blocks of text and the titles corresponding (overlapping chunk lines) obtained previously
 - **Markdown (`.md`) / text (`.txt`)**:
   1. markdown files are split in chunks at each heading (`#` to `######`), ignoring lines inside code fences; the heading hierarchy is stored as `titles`
   2. heading lines are removed from the chunk text 
@@ -202,8 +204,74 @@ How **BM25** works:
 
 ## Performance analysis
 
+- **Recall@5**:
+
+      `Recall@k` measures the accuracy of the k sources retrieved for a dataset of about 100 questions.  A retrieved chunk matches an expected source when they are in the same file and their character ranges overlap enough (IoU > 0.05).
+
+| max_chunk_size | Docs recall@5 | Code recall@5 |
+|----------------|---------------|---------------|
+|     200        | 80.0%         | 62.6%         |
+|     300        | 84.0%         | 61.6%         |
+|     400        | 83.0%         | 64.6%         |
+|     500        | 80.0%         | 68.7%         |
+|     600        | 83.0%         | 67.7%         |
+|     700        | 84.0%         | 69.7%         |
+|     800        | 83.0%         | 65.7%         |
+|     900        | 84.0%         | 66.7%         |
+|     1000       | 86.0%         | 65.7%         |
+|     1100       | 88.0%         | 66.7%         |
+|     1200       | 86.0%         | 68.7%         |
+|     1300       | 87.0%         | 66.7%         |
+|     1400       | 87.0%         | 66.7%         |
+|     1500       | 85.0%         | 67.7%         |
+|     1600       | 84.0%         | 64.6%         |
+|     1700       | 87.0%         | 66.7%         |
+|     1800       | 87.0%         | 67.7%         |
+|     1900       | 88.0%         | 66.7%         |
+|     2000       | 87.0%         | 66.7%         |
+
+Below 200 max_chunk_size, docs recall@5 drops sharply (71% at 150, 56% at 100, 27% at 50). In fact short chunk doesn't give enough information, so several chunks can match the expected source.
+
+- **Indexing time**: chunking and indexing the whole corpus is quick, particularly for larger `max_chunk_size`.  It takes only a few seconds, far below the 5 minutes limit.
+- **Retrieval throughput**: searching for 200 questions is almost instantaneous, thanks to the `bm25s` optimization.
+
 ## Design decisions
+
+- **Plug a ready-to-use BM25 to my pipeline instead of reimplementing it**: fast to adapt to a RAG pipeline (pure python) and optimized (uses numpy).
+- **Chunks that follow structure, with titles (heading / definition) in the index**: chunks follow the structure of the code and documents (functions, classes, headings). A chunk is more likely to be a meaningful unit instead of a block of `max_chunk_size` characters. Moreover, the function names, the headings and the file name are indexed with the chunk, which helps on the retrieval process.
+- **Ollama**: the model is only used as an answering machine based on the retrieved context, so a small `qwen3:0.6b` served by Ollama is enough. What's more it is much lighter to install and run (CPU only).
 
 ## Challenges faced
 
+- **Find ways to improve recall@5**: for lower chunk size especially for docs, recall@5 was under the performance limit.
+    - **Fix**: the file name and the titles (headings / definitions) are tokenized together with the chunk text. This raised recall@5 by 8 to 13 points on docs and 9 to 22 points on code, depending on the chunk size.
+- **Reduce text loss between two python code chunks**: splitting in nodes with AST leaves the comments and decorators that sit between two nodes outside them.
+    - **Fix**: each block now starts where the previous one ends, so the text between goes into the next chunk.
+- **Avoid reindexing the corpus at each run**: indexing takes time, and it is useless if nothing changed. An `Indexer` call always re-index the corpus.
+    - **Fix**: the size and modification date of each file and the chunk size are written in `corpus_checker.json`. The index is rebuilt only if the `max_chunk_size` has changed or any change in a corpus file has occurred.
+
 ## Example usage
+
+All the commands are described in the [Execution](#execution) section.
+
+For instance, to search the sources of a question:
+```bash
+uv run python -m src search "How to configure the OpenAI server" --k 3
+```
+Output:
+```bash
+data/raw/vllm-0.10.1/benchmarks/auto_tune/README.md [3394:3471]
+data/raw/vllm-0.10.1/docs/deployment/frameworks/dstack.md [1940:3168]
+data/raw/vllm-0.10.1/examples/online_serving/openai_chat_completion_client_with_tools_required.py [0:565]
+```
+
+To answer a question:
+```bash
+uv run python -m src answer "How to configure the openAI server" --k 3
+```
+
+Output:
+```bash
+>>>Query: 'How to configure the openAI server'
+Answer: To configure the OpenAI server, you can set the API key and base URL using the provided code snippet.
+```
