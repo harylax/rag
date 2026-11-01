@@ -186,11 +186,19 @@ Python chunker doesn't need overlap, since its chunks already follow the code st
 
 ## Retrieval method
 
-**BM25** of the `bm25s` was used to index the chunks in `data/processed/`.
+The `bm25s` library and its main class **BM25** was used for this project for the indexing and retrieval part. I did not reimplement the BM25 algorithm.
 
-The same **BM25** is used to load the index and retrieve the top-k sources corresponding to a question.
+- `tokenize()`: transforms the chunk text, titles and file name (or the question) into tokens.
+- `index()`: computes the term frequency in each chunk, the document frequency of each term in the corpus, the IDF (rareness) of each token, and the length of each chunk. 
+- `save()`: save the index in `data/processed`. The list of all `MinimalSource` (file_path, first/last character index) and a corpus checker (each file size and modification date) are also saved in there.
+- `load()`: loads the saved index into a `BM25` instance. The list of `MinimalSource` is loaded in a `Retriever` instance.
+- `retrieve()`: scores every chunk against the question and returns the top-k sources, ranked from the best to the lesser good.
 
-If it's a dataset of questions, the same method is called for each question, and the list of retrieved sources corresponding to each question is stored in a JSON result file.
+How **BM25** works:
+- A token counts more when it is rare in the corpus (IDF): usual tokens like `the` or `to` get very low score, while rare tokens such as `OpenAI` get high score.
+- A chunk gets a higher score when it contains the tokens of the question.
+- A chunk with repeated rare tokens gets an increase of its score.
+- The score is normalized by the chunk length, so a long chunk score is reduced in favor of a short one. 
 
 ## Performance analysis
 
