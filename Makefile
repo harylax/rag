@@ -6,7 +6,7 @@ ARG?=
 export OLLAMA_MODELS
 export UV_CACHE_DIR=$(HOME)/goinfre/uv_cache
 
-.PHONY: all install serve run clean lint lint-strict kill
+.PHONY: all install serve run debug clean lint lint-strict kill
 
 all: run
 
@@ -25,7 +25,7 @@ run: install
 	$(PYTHON) $(MAIN) $(ARG)
 
 debug: install
-	$(PYTHON) pdb $(MAIN) $(ARG)
+	$(PYTHON) pdb -m $(MAIN) $(ARG)
 
 clean:
 	find . -type d -name ".mypy_cache" -exec rm -rf {} +
@@ -34,16 +34,16 @@ clean:
 	find . -type d -name "output" -exec rm -rf {} +
 
 lint:
-	$(PYTHON) flake8 $(MAIN)
-	$(PYTHON) mypy $(MAIN) --warn-return-any \
+	$(PYTHON) flake8 .
+	$(PYTHON) mypy . --warn-return-any \
 			--warn-unused-ignores \
 			--ignore-missing-imports \
 			--disallow-untyped-defs \
 			--check-untyped-defs
 
 lint-strict:
-	$(PYTHON) flake8 $(MAIN)
-	$(PYTHON) mypy $(MAIN) --strict
+	$(PYTHON) flake8 .
+	$(PYTHON) mypy . --strict
 
 kill:
 	-pkill -x ollama

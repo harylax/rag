@@ -1,3 +1,5 @@
+"""Split the corpus files (.py, .md, .txt) into chunks."""
+
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from .models import Chunk
 from pathlib import Path
@@ -11,7 +13,14 @@ MIN_CHUNK_SIZE: int = 200
 
 
 class BaseChunker(ABC):
+    """Base class of the chunkers."""
+
     def __init__(self, max_chunk_size: int = 2000) -> None:
+        """Set the maximum chunk size.
+
+        Args:
+            max_chunk_size: From 200 to 2000 characters.
+        """
         self.max_chunk_size: int = max_chunk_size
         if (
             self.max_chunk_size < 200
@@ -26,14 +35,39 @@ class BaseChunker(ABC):
 
     @abstractmethod
     def split_in_chunks(self, text: str, file_path: str) -> list[Chunk]:
+        """Split a text into chunks.
+
+        Args:
+            text: Content of the file.
+            file_path: Path of the file.
+
+        Returns:
+            The chunks of the file.
+        """
         ...
 
 
 class TextChunker(BaseChunker):
+    """Chunker for text files."""
+
     def __init__(self, max_chunk_size: int = 2000) -> None:
+        """Set the maximum chunk size.
+
+        Args:
+            max_chunk_size: Maximum chunk size in characters.
+        """
         super().__init__(max_chunk_size)
 
     def split_in_chunks(self, text: str, file_path: str) -> list[Chunk]:
+        """Split a text with the recursive splitter (10% overlap).
+
+        Args:
+            text: Content of the file.
+            file_path: Path of the file.
+
+        Returns:
+            The chunks of the file.
+        """
         res: list[Chunk] = []
         splitter = RecursiveCharacterTextSplitter(
             ['\n\n', '\n', '. ',  ' ', ''],
@@ -56,10 +90,26 @@ class TextChunker(BaseChunker):
 
 
 class MarkdownChunker(BaseChunker):
+    """Chunker for Markdown files."""
+
     def __init__(self, max_chunk_size: int = 2000) -> None:
+        """Set the maximum chunk size.
+
+        Args:
+            max_chunk_size: Maximum chunk size in characters.
+        """
         super().__init__(max_chunk_size)
 
     def split_by_title(self, text: str, file_path: str) -> list[Chunk]:
+        """Split a Markdown text at each heading, ignoring code blocks.
+
+        Args:
+            text: Markdown content.
+            file_path: Path of the file.
+
+        Returns:
+            One chunk per section, with its headings as titles.
+        """
         res: list[Chunk] = []
 
         lines: list[str] = text.splitlines(keepends=True)
@@ -111,6 +161,14 @@ class MarkdownChunker(BaseChunker):
         return self.clean_titles(res)
 
     def clean_titles(self, chunks: list[Chunk]) -> list[Chunk]:
+        """Remove the heading line of each chunk, drop empty chunks.
+
+        Args:
+            chunks: Chunks made by split_by_title.
+
+        Returns:
+            The cleaned chunks.
+        """
         res: list[Chunk] = []
         for chunk in chunks:
             lines: list[str] = chunk.text.splitlines(keepends=True)
@@ -141,6 +199,15 @@ class MarkdownChunker(BaseChunker):
         return res
 
     def split_in_chunks(self, text: str, file_path: str) -> list[Chunk]:
+        """Split by heading, then split the chunks that are too large.
+
+        Args:
+            text: Markdown content.
+            file_path: Path of the file.
+
+        Returns:
+            The chunks of the file.
+        """
         res: list[Chunk] = []
         chunks: list[Chunk] = self.split_by_title(text, file_path)
         for chunk in chunks:
@@ -170,21 +237,47 @@ class MarkdownChunker(BaseChunker):
 
 @dataclass
 class Definition:
+    """Line range and title of a class or function."""
+
     lineno: int
     end_lineno: int
     title: str
 
 
 class PythonCodeChunker(BaseChunker):
+    """Chunker for Python files, based on the AST."""
+
     def __init__(self, max_chunk_size: int = 2000) -> None:
+        """Set the maximum chunk size.
+
+        Args:
+            max_chunk_size: Maximum chunk size in characters.
+        """
         super().__init__(max_chunk_size)
 
     def node_length(self, lines: list[str], node: ast.stmt) -> int:
+        """Compute the size of a node in the file.
+
+        Args:
+            lines: Lines of the file.
+            node: AST statement.
+
+        Returns:
+            Number of characters of the node.
+        """
         start: int = node.lineno - 1
         end: int = node.end_lineno or node.lineno
         return len(''.join(lines[start:end]))
 
     def _get_children(self, node: ast.stmt) -> list[ast.stmt]:
+        """Return the body statements of a node, sorted by line.
+
+        Args:
+            node: AST statement (class, function, if, try, match...).
+
+        Returns:
+            The child statements in source order.
+        """
         children: list[ast.stmt] = list(getattr(node, 'body', []))
         children.extend(getattr(node, 'orelse', []))
         children.extend(getattr(node, 'finalbody', []))
@@ -199,6 +292,15 @@ class PythonCodeChunker(BaseChunker):
             lines: list[str],
             node: ast.stmt
             ) -> list[ast.stmt]:
+        """Split a node into children until each fits the chunk size.
+
+        Args:
+            lines: Lines of the file.
+            node: AST statement.
+
+        Returns:
+            The node, or its smaller descendants if it is too large.
+        """
         if self.node_length(lines, node) <= self.max_chunk_size:
             return [node]
         children: list[ast.stmt] = self._get_children(node)
@@ -214,6 +316,15 @@ class PythonCodeChunker(BaseChunker):
             lines: list[str],
             nodes: list[ast.stmt]
             ) -> list[list[ast.stmt]]:
+        """Group consecutive nodes while they fit the chunk size.
+
+        Args:
+            lines: Lines of the file.
+            nodes: AST statements.
+
+        Returns:
+            The groups of consecutive nodes.
+        """
         res: list[list[ast.stmt]] = []
         group: list[ast.stmt] = []
         group_len: int = 0
@@ -235,6 +346,15 @@ class PythonCodeChunker(BaseChunker):
         return res
 
     def build_blocks(self, text: str, tree: ast.Module | None) -> list[str]:
+        """Turn the groups of nodes into blocks of text.
+
+        Args:
+            text: Content of the file.
+            tree: Parsed AST, or None on a syntax error.
+
+        Returns:
+            The blocks of text (the whole text if there is no tree).
+        """
         if tree is None:
             return [text]
         lines: list[str] = text.splitlines(keepends=True)
@@ -253,6 +373,14 @@ class PythonCodeChunker(BaseChunker):
         return blocks
 
     def split_oversized(self, blocks: list[str]) -> list[str]:
+        """Split the blocks larger than the chunk size.
+
+        Args:
+            blocks: Blocks of text.
+
+        Returns:
+            The split blocks.
+        """
         splitter = RecursiveCharacterTextSplitter(
             chunk_size=self.max_chunk_size,
             chunk_overlap=0,
@@ -268,6 +396,14 @@ class PythonCodeChunker(BaseChunker):
         return res
 
     def merge_small(self, blocks: list[str]) -> list[str]:
+        """Merge consecutive blocks while they fit the chunk size.
+
+        Args:
+            blocks: Blocks of text.
+
+        Returns:
+            The merged blocks.
+        """
         res: list[str] = []
         for block in blocks:
             if res and len(res[-1]) + len(block) <= self.max_chunk_size:
@@ -277,6 +413,14 @@ class PythonCodeChunker(BaseChunker):
         return res
 
     def get_definitions(self, tree: ast.Module | None) -> list[Definition]:
+        """List the classes and functions of the file.
+
+        Args:
+            tree: Parsed AST, or None on a syntax error.
+
+        Returns:
+            The definitions, sorted by line.
+        """
         res: list[Definition] = []
         if tree is None:
             return res
@@ -304,6 +448,15 @@ class PythonCodeChunker(BaseChunker):
         return sorted(res, key=lambda x: x.lineno)
 
     def split_in_chunks(self, text: str, file_path: str) -> list[Chunk]:
+        """Split a Python text into chunks titled by their definitions.
+
+        Args:
+            text: Python source code.
+            file_path: Path of the file.
+
+        Returns:
+            The chunks of the file.
+        """
         try:
             tree: ast.Module | None = ast.parse(text)
         except SyntaxError:
@@ -336,6 +489,14 @@ class PythonCodeChunker(BaseChunker):
 def folder_files_content(
         folder_path: str = 'data/raw/vllm-0.10.1'
         ) -> dict[str, str]:
+    """Read the .py, .md and .txt files of a folder.
+
+    Args:
+        folder_path: Folder of the corpus.
+
+    Returns:
+        The content of each file, by path.
+    """
     res: dict[str, str] = {}
     for file in Path(folder_path).rglob('*'):
         if file.is_file() and file.suffix in ['.txt', '.md', '.py']:
@@ -353,6 +514,15 @@ def chunk_folder_files(
         folder_path: str = 'data/raw/vllm-0.10.1',
         max_chunk_size: int = 2000
 ) -> list[Chunk]:
+    """Chunk every .py, .md and .txt file of a folder.
+
+    Args:
+        folder_path: Folder of the corpus.
+        max_chunk_size: Maximum chunk size in characters.
+
+    Returns:
+        The chunks of all the files.
+    """
     res: list[Chunk] = []
     files_content: dict[str, str] = folder_files_content(folder_path)
     for path, content in tqdm(
@@ -375,85 +545,3 @@ def chunk_folder_files(
                     )
                 )
     return res
-
-
-# def read_file(path: str) -> str:
-#     try:
-#         return Path(path).read_text()
-#     except OSError as err:
-#         print(f"\033[31m{err.__class__.__name__}: {err}\033[0m")
-#         exit(1)
-
-
-# def test_md(
-#         max_chunk_size: int = 2000,
-#         file_path: str = 'data/raw/vllm-0.10.1/README.md'
-#         ) -> None:
-#     content = read_file(file_path)
-#     chunks = MarkdownChunker(max_chunk_size).split_in_chunks(content, file_path)
-#     for chunk in chunks:
-#         # print(chunk.model_dump_json(indent=2))
-#         print('========================================')
-#         print(chunk.text)
-#         print('----------------------------------------')
-#         print(content[chunk.first_character_index:chunk.last_character_index + 1])
-#         print('========================================')
-#         assert chunk.text == content[chunk.first_character_index:chunk.last_character_index + 1]
-
-
-# def test_py(
-#         max_chunk_size: int = 2000,
-#         file_path: str = 'data/raw/vllm-0.10.1/setup.py'
-#         ) -> None:
-#     content = read_file(file_path)
-#     chunks = PythonCodeChunker(max_chunk_size).split_in_chunks(content, file_path)
-#     for chunk in chunks:
-#         if chunk.titles:
-#             print(chunk.model_dump_json(indent=2))
-#         # print('========================================')
-#         # print(chunk.text)
-#         # print('----------------------------------------')
-#         # print(content[chunk.first_character_index:chunk.last_character_index + 1])
-#         # print('========================================')
-#         # assert chunk.text == content[chunk.first_character_index:chunk.last_character_index + 1]
-
-
-# def test_txt(
-#         max_chunk_size: int = 2000,
-#         file_path: str = 'data/raw/vllm-0.10.1/requirements/cpu.txt'
-#         ) -> None:
-#     content = read_file(file_path)
-#     chunks = TextChunker(max_chunk_size).split_in_chunks(content, file_path)
-#     for chunk in chunks:
-#         # print(chunk.model_dump_json(indent=2))
-#         print('========================================')
-#         print(chunk.text)
-#         print('----------------------------------------')
-#         print(content[chunk.first_character_index:chunk.last_character_index + 1])
-#         print('========================================')
-#         assert chunk.text == content[chunk.first_character_index:chunk.last_character_index + 1]
-
-
-# def test_process(max_chunk_size: int = 2000) -> None:
-#     # processed_txt = chunk_folder_files(
-#     #     max_chunk_size=max_chunk_size, file_extension=['.txt']
-#     #     )
-#     # processed_md = chunk_folder_files(
-#     #     max_chunk_size=max_chunk_size, file_extension=['.txt', '.md']
-#     #     )
-#     # processed_py = chunk_folder_files(
-#     #     max_chunk_size=max_chunk_size, file_extension=['.py']
-#     #     )
-#     processed_all = chunk_folder_files(max_chunk_size=max_chunk_size)
-#     # for chunk in processed_txt:
-#     #     print(chunk.model_dump_json(indent=2))
-#     # for chunk in processed_md:
-#     #     print(chunk.model_dump_json(indent=2))
-#     # for chunk in processed_py:
-#     #     print(chunk.model_dump_json(indent=2))
-#     for chunk in processed_all:
-#         print(chunk.model_dump_json(indent=2))
-
-
-# if __name__ == "__main__":
-#     test_py(200)

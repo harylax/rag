@@ -1,3 +1,5 @@
+"""Retrieve the most relevant chunks of a question with BM25."""
+
 from bm25s import BM25, tokenize
 from .models import (
     MinimalSource, MinimalSearchResults, RagDataset, StudentSearchResults
@@ -9,12 +11,12 @@ import json
 from pydantic import ValidationError
 import sys
 
-DATASET: str = 'data/datasets/UnansweredQuestions/dataset_docs_public.json'
-SAVE_DIR: str = 'data/output/search_results/UnansweredQuestions'
-
 
 class Retriever:
+    """Search the BM25 index."""
+
     def __init__(self) -> None:
+        """Load the saved index and the sources."""
         try:
             self.bm25 = BM25().load('data/processed')
         except OSError as err:
@@ -39,6 +41,16 @@ class Retriever:
             k: int = 3,
             question_id: str = str(uuid.uuid4())
             ) -> MinimalSearchResults:
+        """Find the top-k sources of a question with BM25.
+
+        Args:
+            question: The question.
+            k: Number of sources to keep.
+            question_id: Identifier of the question.
+
+        Returns:
+            The question with its retrieved sources.
+        """
         try:
             indices, _ = self.bm25.retrieve(tokenize(question), k=k)
         except ValueError as err:
@@ -51,15 +63,30 @@ class Retriever:
         )
 
     def search(self, question: str, k: int = 3) -> MinimalSearchResults:
+        """Find the top-k sources of a question.
+
+        Args:
+            question: The question.
+            k: Number of sources to keep.
+
+        Returns:
+            The question with its retrieved sources.
+        """
         return self.get_question_corresponding_sources(question, k)
 
     def search_dataset(
             self,
-            dataset_path: str = DATASET,
-            k: int = 3,
-            save_directory: str = SAVE_DIR
+            dataset_path: str,
+            k: int,
+            save_directory: str
             ) -> None:
+        """Search each question of a dataset and save the results.
 
+        Args:
+            dataset_path: JSON file of the questions.
+            k: Number of sources to keep.
+            save_directory: Folder of the results file.
+        """
         try:
             rag_dataset = RagDataset.model_validate_json(
                 Path(dataset_path).read_text()
@@ -95,29 +122,3 @@ class Retriever:
         )
         save_path.write_text(student_search_results.model_dump_json(indent=2))
         print(f"Saved student_search_results to {save_path}")
-
-
-# def read_source(source: MinimalSource) -> str:
-#     file_path = Path(source.file_path)
-#     try:
-#         file_content: str = file_path.read_text()
-#         start = source.first_character_index
-#         end = source.last_character_index
-#         return file_content[start:end + 1]
-#     except OSError as err:
-#         print(f"\033[31m{err.__class__.__name__}: {err}\033[0m")
-#         exit(1)
-
-
-# if __name__ == "__main__":
-#     retriever = Retriever()
-#     sources = retriever.search("How can I configure OpenAI?", 10)
-#     for source in sources.retrieved_sources:
-#         print("=====================================")
-#         print(f"path: {source.file_path!r}")
-#         print("-------------------------------------")
-#         print(">>>SOURCE<<<")
-#         print(read_source(source))
-#         print("=====================================")
-#     # import json
-#     # print(json.dumps([source.model_dump() for source in sources], indent=2))

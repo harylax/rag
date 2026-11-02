@@ -1,10 +1,10 @@
 [project]
-name = "rag"
+name = "rag-against-the-machine"
 version = "0.1.0"
-description = "Add your description here"
+description = "Retrieval Augmented Generation"
 readme = "README.md"
 authors = [
-    { name = "harylax", email = "haryandr23@gmail.com" }
+    { name = "haryandr" }
 ]
 requires-python = ">=3.10"
 dependencies = [
@@ -21,4 +21,18 @@ dev = [
     "flake8>=7.4.1",
     "flake8-docstrings>=1.7.0",
     "mypy>=2.4.0",
+    "types-tqdm>=4.70.0.20261102",
 ]
+
+[tool.mypy]
+exclude = [
+    "data/",
+    ".venv/"
+]
+
+[[tool.mypy.overrides]]
+module = [
+    "bm25s",
+    "fire"
+]
+ignore_missing_imports = true

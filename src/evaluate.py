@@ -1,16 +1,25 @@
-from .models import MinimalSource, StudentSearchResults, RagDataset
+"""Evaluate the retrieval with recall@k."""
+
+from .models import (
+    MinimalSource, StudentSearchResults, RagDataset, AnsweredQuestion
+    )
 from pathlib import Path
 import sys
 from pydantic import ValidationError
 
 IOU_THRESHOLD: float = 0.05
-STUDENT_SEARCH_RESULTS_PATH: str = (
-    'data/output/search_results/UnansweredQuestions/dataset_docs_public.json'
-)
-DATASET_PATH: str = 'data/datasets/AnsweredQuestions/dataset_docs_public.json'
 
 
 def iou(found: MinimalSource, expected: MinimalSource) -> float:
+    """Compute the intersection over union of two sources.
+
+    Args:
+        found: Retrieved source.
+        expected: Expected source.
+
+    Returns:
+        The IoU of the character ranges, 0.0 for different files.
+    """
     if found.file_path != expected.file_path:
         return 0.0
     found_i = {
@@ -30,35 +39,61 @@ def iou(found: MinimalSource, expected: MinimalSource) -> float:
     return inter / union if union else 0.0
 
 
-def score_at_k(
+def recall_for_question(
         retrieved: list[MinimalSource],
         expected: list[MinimalSource],
         k: int
         ) -> float:
+    """Compute the share of expected sources found in the top-k.
+
+    Args:
+        retrieved: Retrieved sources, best first.
+        expected: Expected sources of the question.
+        k: Number of retrieved sources considered.
+
+    Returns:
+        The recall of the question, between 0 and 1.
+    """
     top_k: list[MinimalSource] = retrieved[:k]
-    found: int = sum(
+    n_found: int = sum(
         any(iou(f, e) > IOU_THRESHOLD for f in top_k)
         for e in expected
         )
-    return found / len(expected)
+    return n_found / len(expected) if expected else 0.0
 
 
-def recall_at_k(
+def recall_for_dataset(
         retrieved: dict[str, list[MinimalSource]],
         expected: dict[str, list[MinimalSource]],
         k: int
         ) -> float:
-    scores: list[float] = [
-        score_at_k(retrieved.get(question_id, []), sources, k)
+    """Compute the mean recall@k of all questions.
+
+    Args:
+        retrieved: Retrieved sources by question id.
+        expected: Expected sources by question id.
+        k: Number of retrieved sources considered.
+
+    Returns:
+        The mean recall, between 0 and 1.
+    """
+    recalls: list[float] = [
+        recall_for_question(retrieved.get(question_id, []), sources, k)
         for question_id, sources in expected.items()
     ]
-    return sum(scores) / len(scores)
+    return sum(recalls) / len(recalls) if recalls else 0.0
 
 
 def evaluate(
-        student_search_results_path: str = STUDENT_SEARCH_RESULTS_PATH,
-        dataset_path: str = DATASET_PATH
+        student_search_results_path: str,
+        dataset_path: str
         ) -> None:
+    """Print the recall@k of the search results for a dataset.
+
+    Args:
+        student_search_results_path: Search results file.
+        dataset_path: JSON file of the expected sources.
+    """
     try:
         students_search_results = StudentSearchResults.model_validate_json(
             Path(student_search_results_path).read_text()
@@ -83,6 +118,7 @@ def evaluate(
     expected: dict[str, list[MinimalSource]] = {
         q.question_id: q.sources
         for q in rag_dataset.rag_questions
+        if isinstance(q, AnsweredQuestion)
     }
     retrieved: dict[str, list[MinimalSource]] = {
         r.question_id: r.retrieved_sources
@@ -103,7 +139,7 @@ def evaluate(
         if k > students_search_results.k:
             print(f"📈 Recall@{k}: N/A")
             continue
-        recall = recall_at_k(retrieved, expected, k)
+        recall = recall_for_dataset(retrieved, expected, k)
         print(f"📈 Recall@{k}: {recall:.3f} ({(recall * 100):.1f}%)")
         data[f'recall@{k}'] = recall
     print(data)

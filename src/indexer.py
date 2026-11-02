@@ -1,3 +1,5 @@
+"""Build and save the BM25 index of the corpus chunks."""
+
 from bm25s import BM25
 from .chunker import chunk_folder_files
 from .models import Chunk, MinimalSource
@@ -9,12 +11,19 @@ from bm25s import tokenize
 
 
 class Indexer:
+    """BM25 index of the corpus, rebuilt only if it changed."""
+
     def __init__(
             self,
             folder_path: str = 'data/raw/vllm-0.10.1',
             max_chunk_size: int = 2000
             ) -> None:
+        """Index the corpus unless the saved index is up to date.
 
+        Args:
+            folder_path: Folder of the corpus.
+            max_chunk_size: Maximum chunk size in characters.
+        """
         data_path = Path('data/processed/data.csc.index.npy')
         indices_path = Path('data/processed/indices.csc.index.npy')
         indptr_path = Path('data/processed/indptr.csc.index.npy')
@@ -72,12 +81,25 @@ class Indexer:
             )
 
     def save_sources(self, sources: list[MinimalSource]) -> None:
+        """Save the file path and character range of each chunk.
+
+        Args:
+            sources: One source per chunk, in index order.
+        """
         data: list[Any] = [source.model_dump() for source in sources]
         Path('data/processed/sources.json').write_text(
             json.dumps(data, indent=2)
         )
 
     def get_tokens(self, chunks: list[Chunk]) -> Any:
+        """Tokenize each chunk with its file name and titles.
+
+        Args:
+            chunks: Chunks of the corpus.
+
+        Returns:
+            The tokenized chunks, ready to be indexed.
+        """
         res = []
         for chunk in tqdm(chunks, desc='Tokenizing', unit=' chunk'):
             titles: str = '\n'.join(chunk.titles)
@@ -90,6 +112,15 @@ class Indexer:
             corpus_path: str,
             max_chunk_size: int
             ) -> dict[str, Any]:
+        """Describe the state of the corpus.
+
+        Args:
+            corpus_path: Folder of the corpus.
+            max_chunk_size: Maximum chunk size in characters.
+
+        Returns:
+            Modification date and size of each file, and the chunk size.
+        """
         files: dict[str, Any] = {}
         for file in Path(corpus_path).rglob('*'):
             if file.suffix in ['.txt', '.md', '.py']:
@@ -97,7 +128,3 @@ class Indexer:
                 files[str(file)] = [stat.st_mtime, stat.st_size]
         files['max_chunk_size'] = max_chunk_size
         return files
-
-
-# if __name__ == "__main__":
-#     indexer = Indexer(max_chunk_size=1000)

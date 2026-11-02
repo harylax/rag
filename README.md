@@ -31,6 +31,18 @@ The pipeline has five stages:
 
 ### Installation
 
+Copy the zip files (vllm-0.10.1, datasets, moulinette) at the root of the RAG repository, then:
+
+```bash
+mkdir -p data/raw
+unzip vllm-0.10.1.zip -d data/raw/.
+unzip datasets_public.zip -d data/.
+unzip moulinette.zip -d .
+mv data/datasets_public data/datasets
+mv moulinette-ubuntu moulinette
+rm moulinette-fedora vllm-0.10.1.zip datasets_public.zip moulinette.zip
+```
+
 Installation fails without enough space. It is safer to redirect caches to `goinfre`:
 
 ```bash
@@ -126,10 +138,13 @@ uv run python -m src evaluate \
 
 ### AI Usage
 
-AI tools were used as assistants for:
+AI tools were used as learning assistants for:
 
-- Explaining BM25 scoring and how to use the `bm25s` library.
-- Explaining the `langchain-text-splitters` library and how to use it.
+- Understanding python `AST` and how to extract statements from python code.
+- Understanding `BM25` scoring and learning how to use the `bm25s` library.
+- Exploring the `langchain-text-splitters` library and understanding its usage.
+- Understanding how the Ollama server works and how to interact with it through the `ollama.chat` API.
+- Drafting docstrings following PEP 257
 
 ## System architecture
 

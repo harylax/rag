@@ -1,3 +1,5 @@
+"""Generate answers from the retrieved sources with Ollama."""
+
 import ollama
 from .models import (
     MinimalSource, MinimalSearchResults,
@@ -16,11 +18,19 @@ MAX_CONTEXT_CHARS: int = 7000
 
 
 class Answer:
+    """Answer questions with a local Ollama model."""
+
     def __init__(self, model: str = 'qwen3:0.6b') -> None:
+        """Store the model name and check that it is available.
+
+        Args:
+            model: Name of the Ollama model.
+        """
         self.model: str = model
         self.check_ollama()
 
     def check_ollama(self) -> None:
+        """Exit with an error if the Ollama model is not available."""
         try:
             ollama.show(self.model)
         except Exception as err:
@@ -33,6 +43,14 @@ class Answer:
 
     @staticmethod
     def read_source_text(source: MinimalSource) -> str:
+        """Read the text of a source in its file.
+
+        Args:
+            source: File path and character range.
+
+        Returns:
+            The text, or an empty string if the file is unreadable.
+        """
         try:
             file_content: str = Path(source.file_path).read_text()
             start: int = source.first_character_index
@@ -46,6 +64,15 @@ class Answer:
         retrieved_sources: list[MinimalSource],
         max_chars: int = MAX_CONTEXT_CHARS
             ) -> str:
+        """Join the retrieved sources into a context of limited size.
+
+        Args:
+            retrieved_sources: Sources, best first.
+            max_chars: Maximum size of the context.
+
+        Returns:
+            The numbered sources, separated by blank lines.
+        """
         res: list[str] = []
         remaining: int = max_chars
         for i, source in enumerate(retrieved_sources, start=1):
@@ -66,6 +93,15 @@ class Answer:
         question: str,
         search_results: MinimalSearchResults
             ) -> str:
+        """Build the prompt with the context and the question.
+
+        Args:
+            question: The question.
+            search_results: Sources retrieved for the question.
+
+        Returns:
+            The prompt sent to the model.
+        """
         res: str = 'Read the following chunks of documents:\n'
         res += Answer.build_context(search_results.retrieved_sources)
         res += (
@@ -81,6 +117,20 @@ class Answer:
             question: str,
             k: int = 3
     ) -> str:
+        """Stream the answer to a question in the terminal.
+
+        Args:
+            question: The question.
+            k: Number of sources used as context.
+
+        Returns:
+            The generated answer.
+        """
+        if not question:
+            print(f"\033[32m>>>Query: {question!r}\033[0m")
+            print("\033[33mAnswer: I don't know.\033[0m")
+            return "I don't know"
+
         search_results: MinimalSearchResults = Retriever().search(question, k)
         response: Any = ollama.chat(
             model=self.model,
@@ -115,6 +165,22 @@ class Answer:
             self,
             minimal_search_results: MinimalSearchResults
             ) -> MinimalAnswer:
+        """Generate an answer from search results without streaming.
+
+        Args:
+        minimal_search_results: Question and its retrieved sources.
+
+        Returns:
+            The search results with the generated answer.
+        """
+        if not minimal_search_results.question:
+            return MinimalAnswer(
+                question_id=minimal_search_results.question_id,
+                question=minimal_search_results.question,
+                retrieved_sources=minimal_search_results.retrieved_sources,
+                answer="I don't know."
+            )
+
         response: Any = ollama.chat(
             model=self.model,
             messages=[
@@ -148,6 +214,15 @@ class Answer:
             student_search_results_path: str,
             save_directory: str
     ) -> StudentSearchResultsAndAnswer:
+        """Answer each question of a search results file and save it.
+
+        Args:
+            student_search_results_path: Search results file.
+            save_directory: Folder of the answers file.
+
+        Returns:
+            The search results with their answers.
+        """
         search_path = Path(student_search_results_path)
 
         if not search_path.exists():
@@ -204,13 +279,3 @@ class Answer:
         )
 
         return student_search_results_and_answer
-
-
-# if __name__ == "__main__":
-#     from .indexer import Indexer
-#     Indexer(max_chunk_size=2000)
-#     question = 'How can I configure the vLLM Base Code?'
-#     results = Retriever().search(question, 10)
-#     prompt = Answer.build_prompt(question, results)
-#     print(prompt)
-#     print(f"\nPrompt length: {len(prompt)} characters")
