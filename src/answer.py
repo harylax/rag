@@ -126,7 +126,7 @@ class Answer:
         Returns:
             The generated answer.
         """
-        if not question:
+        if not question.strip():
             print(f"\033[32m>>>Query: {question!r}\033[0m")
             print("\033[33mAnswer: I don't know.\033[0m")
             return "I don't know"
@@ -173,7 +173,7 @@ class Answer:
         Returns:
             The search results with the generated answer.
         """
-        if not minimal_search_results.question:
+        if not minimal_search_results.question.strip():
             return MinimalAnswer(
                 question_id=minimal_search_results.question_id,
                 question=minimal_search_results.question,
