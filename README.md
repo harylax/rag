@@ -31,7 +31,7 @@ The pipeline has five stages:
 
 ### Installation
 
-Copy the zip files (vllm-0.10.1, datasets, moulinette) at the root of the RAG repository, then:
+If the `data/raw/vllm-0.10.1` and `data/datasets` directories and `moulinette` are missing, copy the zip files (vllm-0.10.1, datasets, moulinette) at the root of the RAG repository, then:
 
 ```bash
 mkdir -p data/raw
