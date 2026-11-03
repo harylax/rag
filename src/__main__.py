@@ -114,4 +114,17 @@ class CLI:
 
 
 if __name__ == "__main__":
-    Fire(CLI)
+    try:
+        Fire(CLI)
+    except KeyboardInterrupt:
+        print(
+            "\033[31m\nProgram Interrupted\033[0m",
+            file=sys.stderr
+            )
+        sys.exit(1)
+    except Exception as err:
+        print(
+            f"\033[31m\nUnexpected Error: {err}\033[0m",
+            file=sys.stderr
+            )
+        sys.exit(1)
