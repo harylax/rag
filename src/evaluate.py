@@ -127,13 +127,13 @@ def evaluate(
 
     n_expected = len(expected)
     n_retrieved = len(retrieved)
-    print(f"Student data is valid: {n_expected == n_retrieved}")
+    print(f"Student data is valid: {set(expected) == set(retrieved)}")
     print(f"Total number of questions: {n_expected}")
     print(f"Total number of questions with sources: {n_expected}")
     print(f"Total number of questions with student sources: {n_retrieved}")
     print("🎯 Evaluation Results")
     print("========================================")
-    print(f"📊 Questions evaluated: {len(retrieved)}")
+    print(f"📊 Questions evaluated: {n_retrieved}")
     data: dict[str, float] = {}
     for k in (1, 3, 5, 10):
         if k > students_search_results.k:
