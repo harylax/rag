@@ -38,8 +38,9 @@ mkdir -p data/raw
 unzip vllm-0.10.1.zip -d data/raw/.
 unzip datasets_public.zip -d data/.
 unzip moulinette.zip -d .
-mv data/datasets_public data/datasets
+mv data/datasets_public/public data/datasets
 mv moulinette-ubuntu moulinette
+rm -rf data/datasets_public
 rm moulinette-fedora vllm-0.10.1.zip datasets_public.zip moulinette.zip
 ```
 
