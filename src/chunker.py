@@ -23,7 +23,7 @@ class BaseChunker(ABC):
         """
         self.max_chunk_size: int = max_chunk_size
         if (
-            self.max_chunk_size < 200
+            self.max_chunk_size < MIN_CHUNK_SIZE
             or self.max_chunk_size > 2000
         ):
             print(
@@ -503,7 +503,7 @@ def folder_files_content(
             res[str(file)] = file.read_text()
     if not res:
         print(
-            "\033[31mFolderErro: no markdown / python file found.\033[0m",
+            "\033[31mFolderError: no markdown / python file found.\033[0m",
             file=sys.stderr
             )
         sys.exit(1)

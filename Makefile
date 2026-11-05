@@ -21,7 +21,6 @@ serve:
 	until ollama list >/dev/null 2>&1; do sleep 1; done
 
 run: install
-# 	ollama run $(MODEL)
 	$(PYTHON) $(MAIN) $(ARG)
 
 debug: install

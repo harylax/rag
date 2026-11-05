@@ -51,15 +51,25 @@ class Retriever:
         Returns:
             The question with its retrieved sources.
         """
+        if k == 0:
+            print(
+                "\033[31mValueError: k must be greater than 0.\033[0m",
+                file=sys.stderr
+                )
+            sys.exit(1)
         try:
-            indices, _ = self.bm25.retrieve(tokenize(question), k=k)
+            indices, scores = self.bm25.retrieve(tokenize(question), k=k)
         except ValueError as err:
             print(f"\033[31mValueError: {err}\033[0m", file=sys.stderr)
             sys.exit(1)
         return MinimalSearchResults(
             question_id=question_id,
             question=question,
-            retrieved_sources=[self.sources[i] for i in indices[0]]
+            retrieved_sources=[
+                self.sources[i]
+                for i, score in zip(indices[0], scores[0])
+                if score > 0
+                ]
         )
 
     def search(self, question: str, k: int = 3) -> MinimalSearchResults:

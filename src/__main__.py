@@ -5,6 +5,7 @@ from .retrieve import Retriever
 from fire import Fire
 from .answer import Answer
 from .evaluate import evaluate
+import sys
 
 
 class CLI:
